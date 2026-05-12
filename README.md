@@ -1,8 +1,8 @@
-# proof-gate
+# ProofGate
 
 Nice try, LLM. Now prove it.
 
-proof-gate is a Scala-native review conveyor for LLM-written data-pipeline code.
+ProofGate is a Scala-native review conveyor for LLM-written data-pipeline code.
 The core idea is simple:
 
 1. proposal
@@ -38,6 +38,10 @@ This repository currently targets the stable stack:
 - Scalafmt `3.11.1`
 - Scalafix / sbt-scalafix `0.14.6`
 - MUnit `1.3.0`
+
+## Design notes
+
+- [ADR 0001: review conveyor](docs/adr/0001-review-conveyor.md)
 
 ## Module layout
 

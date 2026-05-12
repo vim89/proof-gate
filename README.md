@@ -13,6 +13,21 @@ The core idea is simple:
 
 The first reviewer should be machine-enforced structure, not a human and not another LLM.
 
+## Review flow
+
+```mermaid
+flowchart LR
+  A[LLM draft] --> B[proposal]
+  B --> C[proof<br/>macros inline typestate]
+  C --> D[policy<br/>Scalafix rules]
+  D --> E[pin<br/>runtime sink checks]
+  E --> F[people<br/>AI and human review]
+
+  C -. fail .-> X[reject early]
+  D -. fail .-> X
+  E -. fail .-> X
+```
+
 ## Current stack
 
 This repository currently targets the stable stack:

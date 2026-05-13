@@ -1,5 +1,7 @@
 package proofgate.runtime.spark
 
+import org.apache.spark.sql.types.*
+
 /** Field-level information extracted from a Spark `StructType`.
   *
   * Callers obtain this from a live Spark `StructType` without forcing this module to depend on
@@ -9,14 +11,23 @@ package proofgate.runtime.spark
   * structType.fields.map(f => SparkFieldInfo(f.name, f.dataType.simpleString, f.nullable)).toVector
   * }}}
   *
-  * The caller keeps the Spark dependency; the runtime-pin module stays free of Spark binaries,
-  * which keeps Scala 3 builds clean. Top-level field nullability is preserved. Nested fields parsed
-  * from Spark `DataType.simpleString` are marked nullable because that representation does not
-  * carry nested `StructField.nullable` metadata.
+  * Prefer `SparkSchemaAdapter.fromStructType` when Spark SQL types are available. The
+  * `simpleString` path remains for callers that want to pass a tiny DTO across an integration
+  * boundary.
   */
 final case class SparkFieldInfo(name: String, sparkType: String, nullable: Boolean)
 
 object SparkSchemaAdapter:
+  val HasDefaultMetadataKey: String = "ctdc.hasDefault"
+
+  /** Convert a real Spark `StructType` into a ProofGate `RuntimeShape`.
+    *
+    * This path preserves nested struct field nullability, array `containsNull`, map
+    * `valueContainsNull`, and the `ctdc.hasDefault` metadata used by the contract proof lineage.
+    */
+  def fromStructType(schema: StructType): RuntimeShape =
+    RuntimeShape(schema.fields.toVector.map(fromStructField))
+
   /** Convert a Spark `simpleString` field description into a ProofGate `RuntimeShape`.
     *
     * The adapter supports Spark primitive types and the standard wrappers Spark surfaces through
@@ -33,6 +44,45 @@ object SparkSchemaAdapter:
       dataType = parseType(info.sparkType.trim),
       nullable = info.nullable
     )
+
+  private def fromStructField(field: StructField): RuntimeField =
+    RuntimeField(
+      name = field.name,
+      dataType = fromDataType(field.dataType),
+      nullable = field.nullable,
+      hasDefault = hasDefault(field.metadata)
+    )
+
+  private def fromDataType(dataType: DataType): RuntimeType =
+    dataType match
+      case StringType           => RuntimeType.Primitive("String")
+      case ByteType             => RuntimeType.Primitive("Byte")
+      case ShortType            => RuntimeType.Primitive("Short")
+      case IntegerType          => RuntimeType.Primitive("Int")
+      case LongType             => RuntimeType.Primitive("Long")
+      case FloatType            => RuntimeType.Primitive("Float")
+      case DoubleType           => RuntimeType.Primitive("Double")
+      case BooleanType          => RuntimeType.Primitive("Boolean")
+      case DateType             => RuntimeType.Primitive("java.sql.Date")
+      case TimestampType        => RuntimeType.Primitive("java.sql.Timestamp")
+      case decimal: DecimalType =>
+        RuntimeType.Primitive("BigDecimal")
+      case ArrayType(elementType, containsNull) =>
+        val element = fromDataType(elementType)
+        RuntimeType.Sequence(if containsNull then RuntimeType.Optional(element) else element)
+      case MapType(keyType, valueType, valueContainsNull) =>
+        val value = fromDataType(valueType)
+        RuntimeType.MapType(
+          fromDataType(keyType),
+          if valueContainsNull then RuntimeType.Optional(value) else value
+        )
+      case struct: StructType =>
+        RuntimeType.Struct(struct.fields.toVector.map(fromStructField))
+      case other =>
+        RuntimeType.Primitive(other.typeName)
+
+  private def hasDefault(metadata: Metadata): Boolean =
+    metadata.contains(HasDefaultMetadataKey) && metadata.getBoolean(HasDefaultMetadataKey)
 
   /** Parse a Spark `DataType.simpleString` representation. */
   private[spark] def parseType(input: String): RuntimeType =

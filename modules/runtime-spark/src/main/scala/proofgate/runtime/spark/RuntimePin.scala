@@ -11,7 +11,12 @@ enum RuntimeType:
   case MapType(key: RuntimeType, value: RuntimeType)
   case Struct(fields: Vector[RuntimeField])
 
-final case class RuntimeField(name: String, dataType: RuntimeType, nullable: Boolean)
+final case class RuntimeField(
+    name: String,
+    dataType: RuntimeType,
+    nullable: Boolean,
+    hasDefault: Boolean = false
+)
 final case class RuntimeShape(fields: Vector[RuntimeField])
 
 trait RuntimeShapeEncoder[A]:
@@ -165,7 +170,7 @@ object RuntimeShapeDiff:
 
     val missing =
       expectedFields.collect {
-        case field if !actualByName.contains(field.name) && !field.nullable =>
+        case field if !actualByName.contains(field.name) && !(field.nullable || field.hasDefault) =>
           RuntimeShapeDiff(pathOf(basePath, field.name), renderField(field), "<missing>")
       }
 
@@ -389,7 +394,8 @@ object RuntimeShapeDiff:
 
   private def renderField(field: RuntimeField): String =
     val nullable = if field.nullable then " nullable" else ""
-    s"${renderType(field.dataType)}$nullable"
+    val default = if field.hasDefault then " default" else ""
+    s"${renderType(field.dataType)}$nullable$default"
 
   private def renderType(dataType: RuntimeType): String =
     dataType match

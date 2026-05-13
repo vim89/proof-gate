@@ -1,8 +1,91 @@
 package proofgate.runtime.spark
 
 import munit.FunSuite
+import org.apache.spark.sql.types.*
 
 final class SparkSchemaAdapterSuite extends FunSuite:
+  test("StructType traversal preserves nested nullability and default metadata"):
+    val metadata =
+      new MetadataBuilder()
+        .putBoolean(SparkSchemaAdapter.HasDefaultMetadataKey, true)
+        .build()
+    val schema = StructType(
+      Seq(
+        StructField("id", LongType, nullable = false),
+        StructField(
+          "address",
+          StructType(
+            Seq(
+              StructField("city", StringType, nullable = false),
+              StructField("zip", IntegerType, nullable = true, metadata)
+            )
+          ),
+          nullable = false
+        )
+      )
+    )
+
+    val shape = SparkSchemaAdapter.fromStructType(schema)
+    val address =
+      shape.fields(1).dataType match
+        case RuntimeType.Struct(fields) => fields
+        case other                      => fail(s"Expected struct, found $other")
+
+    assertEquals(shape.fields.head.nullable, false)
+    assertEquals(
+      address.map(field => field.name -> field.nullable),
+      Vector("city" -> false, "zip" -> true)
+    )
+    assertEquals(address.find(_.name == "zip").exists(_.hasDefault), true)
+
+  test("StructType traversal preserves array and map nested optionality"):
+    val schema = StructType(
+      Seq(
+        StructField("tags", ArrayType(StringType, containsNull = true), nullable = false),
+        StructField(
+          "metrics",
+          MapType(StringType, IntegerType, valueContainsNull = true),
+          nullable = false
+        )
+      )
+    )
+
+    val shape = SparkSchemaAdapter.fromStructType(schema)
+
+    assertEquals(
+      shape.fields.head.dataType,
+      RuntimeType.Sequence(RuntimeType.Optional(RuntimeType.Primitive("String")))
+    )
+    assertEquals(
+      shape.fields(1).dataType,
+      RuntimeType.MapType(
+        RuntimeType.Primitive("String"),
+        RuntimeType.Optional(RuntimeType.Primitive("Int"))
+      )
+    )
+
+  test("StructType default metadata feeds Backward runtime policy"):
+    val metadata =
+      new MetadataBuilder()
+        .putBoolean(SparkSchemaAdapter.HasDefaultMetadataKey, true)
+        .build()
+    val actual = SparkSchemaAdapter.fromStructType(
+      StructType(Seq(StructField("id", LongType, nullable = false)))
+    )
+    val expected = SparkSchemaAdapter.fromStructType(
+      StructType(
+        Seq(
+          StructField("id", LongType, nullable = false),
+          StructField("region", StringType, nullable = false, metadata)
+        )
+      )
+    )
+
+    val findings =
+      summon[RuntimePin[proofgate.proof.SchemaPolicy.Backward.type]].validate(actual, expected)
+
+    assertEquals(findings, Vector.empty)
+
   test("primitive types map to canonical Scala names"):
     val shape = SparkSchemaAdapter.fromSparkFields(
       Vector(

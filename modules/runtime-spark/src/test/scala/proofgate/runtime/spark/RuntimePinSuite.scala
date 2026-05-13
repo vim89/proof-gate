@@ -162,6 +162,26 @@ final class RuntimePinSuite extends FunSuite:
 
     assertEquals(findings, Vector.empty)
 
+  test("runtime pin accepts Backward when expected missing field has default metadata"):
+    val actual =
+      RuntimeShape(Vector(RuntimeField("id", RuntimeType.Primitive("Long"), nullable = false)))
+    val expected = RuntimeShape(
+      Vector(
+        RuntimeField("id", RuntimeType.Primitive("Long"), nullable = false),
+        RuntimeField(
+          "region",
+          RuntimeType.Primitive("String"),
+          nullable = false,
+          hasDefault = true
+        )
+      )
+    )
+
+    val findings =
+      summon[RuntimePin[SchemaPolicy.Backward.type]].validate(actual, expected)
+
+    assertEquals(findings, Vector.empty)
+
   test("runtime pin accepts Forward when actual drops fields"):
     final case class Actual(id: Long)
     final case class Expected(id: Long, email: String)

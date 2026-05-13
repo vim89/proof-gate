@@ -113,9 +113,15 @@ conveyor.
 
 ## Spark bridge
 
-`SparkSchemaAdapter` converts a Spark `DataType.simpleString` field description into a
-`RuntimeShape` without forcing this repository to depend on Spark binaries. Callers obtain
-field info from their own Spark session, for example:
+`SparkSchemaAdapter` converts real Spark `StructType` values into a `RuntimeShape`.
+The adapter preserves nested struct nullability, array `containsNull`, map `valueContainsNull`,
+and `ctdc.hasDefault` metadata:
+
+```scala
+val shape = SparkSchemaAdapter.fromStructType(dataset.schema)
+```
+
+For thin integration boundaries, callers can still pass a small DTO:
 
 ```scala
 val info = structType.fields.map(f =>
@@ -125,17 +131,9 @@ val info = structType.fields.map(f =>
 val shape = SparkSchemaAdapter.fromSparkFields(info)
 ```
 
-The adapter understands Spark primitive types, `array<T>`, `map<K,V>`, and nested `struct<...>`
-expressions. The runtime pin diff treats unknown Spark types as raw names so the reviewer can
-either fix the type or extend the adapter.
-
-This is a lightweight bridge, not a full Spark-dependent `StructType` adapter. It records
-top-level `StructField.nullable` so Backward can allow missing nullable fields, but exact
-runtime comparison ignores field-level nullability to match the contract proof semantics.
-Nested fields parsed from `simpleString` are marked nullable because Spark does not encode nested
-nullability in that string form. Use the compile-derived contract shape as the expected side when
-nested optionality inside arrays and maps must be exact, or add the optional Spark example module
-described in the docs.
+The DTO path understands Spark primitive types, `array<T>`, `map<K,V>`, and nested `struct<...>`
+expressions, but Spark `simpleString` does not carry nested struct nullability. Use
+`fromStructType` when runtime parity matters.
 
 See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, including the
 `Dataset[A] => RuntimeShape` helper and a sink-time validate call.

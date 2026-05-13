@@ -39,7 +39,8 @@ object ReviewCommand:
         val report = options.toReport
         val markdown = ReviewReportMarkdown.render(report)
         val verdict = ReviewReports.finalVerdict(report)
-        val exitCode = if verdict == Verdict.Pass || verdict == Verdict.Skip then Success else GateFailed
+        val exitCode =
+          if verdict == Verdict.Pass || verdict == Verdict.Skip then Success else GateFailed
 
         options.out match
           case Some(path) =>
@@ -53,30 +54,32 @@ object ReviewCommand:
 
   private def parseOptions(args: Vector[String]): Either[String, ReviewOptions] =
     parsePairs(args).flatMap: pairs =>
-      pairs.foldLeft[Either[String, ReviewOptions]](Right(ReviewOptions.empty)):
-        case (Right(options), ("--revision", value)) =>
-          Right(options.copy(revision = Some(Revision.unsafe(value))))
-        case (Right(options), ("--summary", value)) =>
-          Right(options.copy(summary = value))
-        case (Right(options), ("--out", value)) =>
-          Right(options.copy(out = Some(Path.of(value))))
-        case (Right(options), ("--question", value)) =>
-          Right(options.copy(optionalQuestions = options.optionalQuestions :+ value))
-        case (Right(options), ("--finding", value)) =>
-          parseFinding(value).map(finding =>
-            options.copy(findings = options.findings :+ finding)
-          )
-        case (Right(options), ("--risk", value)) =>
-          applyRisk(options, value)
-        case (Right(_), (name, _)) =>
-          Left(s"Unknown option: $name")
-        case (Left(error), _) =>
-          Left(error)
-      .flatMap: options =>
-        Either.cond(options.revision.nonEmpty, options, "Missing required option: --revision")
+      pairs
+        .foldLeft[Either[String, ReviewOptions]](Right(ReviewOptions.empty)):
+          case (Right(options), ("--revision", value)) =>
+            Right(options.copy(revision = Some(Revision.unsafe(value))))
+          case (Right(options), ("--summary", value)) =>
+            Right(options.copy(summary = value))
+          case (Right(options), ("--out", value)) =>
+            Right(options.copy(out = Some(Path.of(value))))
+          case (Right(options), ("--question", value)) =>
+            Right(options.copy(optionalQuestions = options.optionalQuestions :+ value))
+          case (Right(options), ("--finding", value)) =>
+            parseFinding(value).map(finding => options.copy(findings = options.findings :+ finding))
+          case (Right(options), ("--risk", value)) =>
+            applyRisk(options, value)
+          case (Right(_), (name, _)) =>
+            Left(s"Unknown option: $name")
+          case (Left(error), _) =>
+            Left(error)
+        .flatMap: options =>
+          Either.cond(options.revision.nonEmpty, options, "Missing required option: --revision")
 
   private def parsePairs(args: Vector[String]): Either[String, Vector[(String, String)]] =
-    def loop(remaining: Vector[String], parsed: Vector[(String, String)]): Either[String, Vector[(String, String)]] =
+    def loop(
+        remaining: Vector[String],
+        parsed: Vector[(String, String)]
+    ): Either[String, Vector[(String, String)]] =
       remaining match
         case Vector() =>
           Right(parsed)

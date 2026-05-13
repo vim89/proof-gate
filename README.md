@@ -61,6 +61,7 @@ sbt reviewGates
 sbt reviewPolicy
 sbt reviewConveyor
 sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proof-gate-review.md"
+sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proof-gate-review.json"
 ```
 
 The GitHub Actions workflow runs the same conveyor and publishes the generated Markdown report to the job summary.

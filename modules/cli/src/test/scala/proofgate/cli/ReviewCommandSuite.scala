@@ -58,6 +58,29 @@ final class ReviewCommandSuite extends FunSuite:
     assert(markdown.contains("| API breaking change | High |"))
     assert(markdown.contains("- Should this sink be append-only?"))
 
+  test("review command renders json to stdout"):
+    val result = ReviewCommand.run(
+      Vector("review", "--revision", "abc123", "--format", "json")
+    )
+
+    assertEquals(result.exitCode, 0)
+    assert(result.stdout.contains(""""schemaVersion":"proof-gate.report.v1""""))
+    assert(result.stdout.contains(""""verdict":"Pass""""))
+    assert(!result.stdout.contains("# ProofGate review report"))
+
+  test("review command infers json format from output path"):
+    val dir = Files.createTempDirectory("proof-gate-cli")
+    val out = dir.resolve("report.json")
+
+    val result = ReviewCommand.run(
+      Vector("review", "--revision", "abc123", "--out", out.toString)
+    )
+    val json = Files.readString(out)
+
+    assertEquals(result.exitCode, 0)
+    assert(json.contains(""""schemaVersion":"proof-gate.report.v1""""))
+    assert(json.contains(""""revision":"abc123""""))
+
   test("review command rejects invalid input"):
     val result = ReviewCommand.run(Vector("review", "--revision"))
 

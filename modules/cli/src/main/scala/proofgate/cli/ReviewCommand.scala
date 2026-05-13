@@ -37,20 +37,20 @@ object ReviewCommand:
         CliResult(UsageError, "", s"$error\n\n$usage")
       case Right(options) =>
         val report = options.toReport
-        val markdown = ReviewReportMarkdown.render(report)
+        val rendered = options.formatOrDefault.render(report)
         val verdict = ReviewReports.finalVerdict(report)
         val exitCode =
           if verdict == Verdict.Pass || verdict == Verdict.Skip then Success else GateFailed
 
         options.out match
           case Some(path) =>
-            write(path, markdown) match
+            write(path, rendered) match
               case Right(()) =>
                 CliResult(exitCode, s"Wrote ProofGate report to ${path.toString}\n", "")
               case Left(error) =>
                 CliResult(UsageError, "", s"$error\n")
           case None =>
-            CliResult(exitCode, markdown, "")
+            CliResult(exitCode, rendered, "")
 
   private def parseOptions(args: Vector[String]): Either[String, ReviewOptions] =
     parsePairs(args).flatMap: pairs =>
@@ -62,6 +62,8 @@ object ReviewCommand:
             Right(options.copy(summary = value))
           case (Right(options), ("--out", value)) =>
             Right(options.copy(out = Some(Path.of(value))))
+          case (Right(options), ("--format", value)) =>
+            parseFormat(value).map(format => options.copy(format = Some(format)))
           case (Right(options), ("--question", value)) =>
             Right(options.copy(optionalQuestions = options.optionalQuestions :+ value))
           case (Right(options), ("--finding", value)) =>
@@ -177,6 +179,12 @@ object ReviewCommand:
       case "blocker" => Right(RiskLevel.Blocker)
       case _         => Left(s"Unknown risk level: $value")
 
+  private def parseFormat(value: String): Either[String, ReportFormat] =
+    normalize(value) match
+      case "markdown" | "md" => Right(ReportFormat.Markdown)
+      case "json"            => Right(ReportFormat.Json)
+      case _                 => Left(s"Unknown report format: $value")
+
   private def writeFile(path: Path, content: String): Either[String, Unit] =
     Try:
       val parent = path.toAbsolutePath.getParent
@@ -198,6 +206,7 @@ object ReviewCommand:
       |Options:
       |  --summary <text>       Report summary. Defaults to "ProofGate review completed."
       |  --out <path>           Write Markdown report to a file. Prints to stdout when omitted.
+      |  --format <format>      Output format: markdown or json. Inferred from .json output paths.
       |  --finding <value>      stage|severity|ruleId|message[|path[|hint]]
       |  --risk <value>         category=level, for example api-breaking-change=High
       |  --question <text>      Optional human-review question.
@@ -214,8 +223,12 @@ private final case class ReviewOptions(
     risk: RiskAssessment,
     findings: Vector[Finding],
     optionalQuestions: Vector[String],
-    out: Option[Path]
+    out: Option[Path],
+    format: Option[ReportFormat]
 ):
+  def formatOrDefault: ReportFormat =
+    format.orElse(out.flatMap(ReportFormat.fromPath)).getOrElse(ReportFormat.Markdown)
+
   def toReport: ReviewReport =
     val stageOutcome =
       if findings.isEmpty then Vector.empty
@@ -244,5 +257,21 @@ private object ReviewOptions:
       risk = RiskAssessment.empty,
       findings = Vector.empty,
       optionalQuestions = Vector.empty,
-      out = None
+      out = None,
+      format = None
     )
+
+private enum ReportFormat:
+  case Markdown, Json
+
+  def render(report: ReviewReport): String =
+    this match
+      case Markdown => ReviewReportMarkdown.render(report)
+      case Json     => ReviewReportJson.render(report)
+
+private object ReportFormat:
+  def fromPath(path: Path): Option[ReportFormat] =
+    Option(path.getFileName)
+      .map(_.toString.toLowerCase)
+      .collect:
+        case name if name.endsWith(".json") => Json

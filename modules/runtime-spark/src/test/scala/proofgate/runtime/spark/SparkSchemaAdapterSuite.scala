@@ -58,6 +58,16 @@ final class SparkSchemaAdapterSuite extends FunSuite:
 
     assertEquals(shape.fields.head.dataType, expected)
 
+  test("nested struct fields are nullable because simpleString omits nested nullability"):
+    val parsed = SparkSchemaAdapter.parseType("struct<city:string,zip:int>")
+
+    val fields =
+      parsed match
+        case RuntimeType.Struct(fields) => fields
+        case other                      => fail(s"Expected struct, found $other")
+
+    assertEquals(fields.map(_.nullable), Vector(true, true))
+
   test("nested array of struct retains type detail"):
     val parsed = SparkSchemaAdapter.parseType("array<struct<id:long,email:string>>")
 

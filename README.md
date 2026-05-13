@@ -47,7 +47,7 @@ This repository currently targets the stable stack:
 ## Module layout
 
 - `modules/model`: core ADTs, typed errors, report model
-- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof (Exact, Backward)
+- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof (Exact, Backward, Forward)
 - `modules/runtime-spark`: runtime shape derivation, sink-boundary pin checks, Spark schema adapter
 - `modules/cli`: CLI entry point
 - `modules/examples`: tiny usage examples
@@ -91,18 +91,19 @@ The expected-failure fixtures prove that these patterns are blocked:
 `SchemaConforms[Out, Contract, Policy]` is the compile-time evidence the proof layer requires.
 
 - `SchemaPolicy.Exact`: `Out` and `Contract` must have the same field names, types, and nesting.
-- `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Every `Contract` field
-  must still exist in `Out` with the declared type. Old consumers reading `Contract`
-  keep working when the producer adds fields.
+- `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Required `Contract`
+  fields must still exist in `Out` with the declared type. Missing optional `Contract`
+  fields are accepted. Old consumers reading `Contract` keep working when the producer
+  adds fields.
 - `SchemaPolicy.Forward`: `Out` may drop fields that `Contract` declares. Extra fields
   in `Out` and type drift still fail. Old producers stay compatible with new consumers
   that have widened the contract.
 
 ## Spark bridge
 
-`SparkSchemaAdapter` converts a flat description of a Spark `StructType` into a `RuntimeShape`
-without forcing this repository to depend on Spark binaries. Callers obtain field info from
-their own Spark session, for example:
+`SparkSchemaAdapter` converts a Spark `DataType.simpleString` field description into a
+`RuntimeShape` without forcing this repository to depend on Spark binaries. Callers obtain
+field info from their own Spark session, for example:
 
 ```scala
 val info = structType.fields.map(f =>
@@ -116,6 +117,12 @@ The adapter understands Spark primitive types, `array<T>`, `map<K,V>`, and neste
 expressions. The runtime pin diff treats unknown Spark types as raw names so the reviewer can
 either fix the type or extend the adapter.
 
+This is a lightweight bridge, not a full Spark-dependent `StructType` adapter. It preserves
+top-level `StructField.nullable`, but nested fields parsed from `simpleString` are marked nullable
+because Spark does not encode nested nullability in that string form. Use the compile-derived
+contract shape as the expected side when nested nullability must be exact, or add the optional
+Spark example module described in the docs.
+
 See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, including the
 `Dataset[A] => RuntimeShape` helper and a sink-time validate call.
 
@@ -123,5 +130,5 @@ See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, inclu
 
 This is an early POC scaffold.
 The current code proves the build, module wiring, typed-error model, typestate assembly,
-exact and backward structural contract proofs, an in-memory runtime shape pin, a Spark
-schema bridge, and a CI-friendly Markdown and JSON review report path.
+exact, backward, and forward structural contract proofs, an in-memory runtime shape pin,
+a Spark schema bridge, and a CI-friendly Markdown and JSON review report path.

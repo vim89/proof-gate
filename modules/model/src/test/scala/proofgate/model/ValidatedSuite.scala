@@ -9,8 +9,8 @@ final class ValidatedSuite extends FunSuite:
   test("invalid short-circuits map"):
     val errors = Vector("bad")
     assertEquals(
-      Validated.invalidAll(errors).map(_.toString),
-      Validated.Invalid(errors)
+      Validated.invalidAll(errors).map(_.toString).toEither,
+      Left(errors)
     )
 
   test("andThen sequences over Valid and stops at Invalid"):
@@ -19,11 +19,11 @@ final class ValidatedSuite extends FunSuite:
 
     val fail =
       Validated.invalid("first").andThen(_ => Validated.valid(99))
-    assertEquals(fail, Validated.Invalid(Vector("first")))
+    assertEquals(fail.toEither, Left(Vector("first")))
 
   test("zip accumulates errors from both sides"):
     val combined = Validated.invalid("a").zip(Validated.invalid("b"))
-    assertEquals(combined, Validated.Invalid(Vector("a", "b")))
+    assertEquals(combined.toEither, Left(Vector("a", "b")))
 
   test("zip passes both values when both valid"):
     val combined = Validated.valid(1).zip(Validated.valid("x"))
@@ -39,8 +39,8 @@ final class ValidatedSuite extends FunSuite:
       )
 
     assertEquals(
-      Validated.sequence(items),
-      Validated.Invalid(Vector("first", "second"))
+      Validated.sequence(items).toEither,
+      Left(Vector("first", "second"))
     )
 
   test("sequence returns the collected values when every entry is valid"):
@@ -55,11 +55,21 @@ final class ValidatedSuite extends FunSuite:
     ):
       Validated.invalidAll(Vector.empty[String])
 
+  test("Invalid constructor is not public outside proofgate"):
+    val errors = compileErrors("""
+      import proofgate.model.Validated
+
+      val invalid = Validated.Invalid(Vector.empty[String])
+    """)
+
+    assert(errors.nonEmpty)
+    assert(errors.contains("Invalid"))
+
   test("fromEither bridges Either"):
     assertEquals(Validated.fromEither(Right(1)), Validated.Valid(1))
     assertEquals(
-      Validated.fromEither(Left("bad")),
-      Validated.Invalid(Vector("bad"))
+      Validated.fromEither(Left("bad")).toEither,
+      Left(Vector("bad"))
     )
 
   test("toEither bridges back"):

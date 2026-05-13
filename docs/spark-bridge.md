@@ -2,10 +2,10 @@
 
 ProofGate keeps the `runtime-spark` module free of Spark binaries so the
 Scala 3 build stays fast and clean. Downstream projects that already depend on
-Spark provide their own `StructType` and bridge into `RuntimeShape` with one
-line.
+Spark provide their own `StructType` and bridge into `RuntimeShape` with a
+small adapter.
 
-## The one-line bridge
+## The lightweight bridge
 
 In a project that already has `org.apache.spark:spark-sql:_:Provided` on the
 classpath:
@@ -37,6 +37,14 @@ def fromStructType(schema: StructType): RuntimeShape =
 The adapter understands Spark primitives plus `array<T>`, `map<K,V>`, and
 nested `struct<...>`. Unknown types pass through as raw Spark names so the
 runtime diff still surfaces them in the review report.
+
+This bridge uses `DataType.simpleString`. That is deliberate for the POC because
+it avoids a Spark dependency in the core artifact graph, but it is not a full
+fidelity `StructType` traversal. Top-level `StructField.nullable` is preserved.
+Nested fields inside `struct<...>` are marked nullable because `simpleString`
+does not carry nested nullability metadata. Use the compile-derived contract
+shape as the expected side when nested nullability must be exact, or add the
+optional Spark example module below and traverse Spark `StructType` directly.
 
 ## End-to-end at the sink
 

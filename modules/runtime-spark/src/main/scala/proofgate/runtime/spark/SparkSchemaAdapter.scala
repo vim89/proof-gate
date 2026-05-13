@@ -1,6 +1,6 @@
 package proofgate.runtime.spark
 
-/** Field-level information from a Spark `StructType`.
+/** Field-level information extracted from a Spark `StructType`.
   *
   * Callers obtain this from a live Spark `StructType` without forcing this module to depend on
   * Spark at compile time:
@@ -10,12 +10,14 @@ package proofgate.runtime.spark
   * }}}
   *
   * The caller keeps the Spark dependency; the runtime-pin module stays free of Spark binaries,
-  * which keeps Scala 3 builds clean.
+  * which keeps Scala 3 builds clean. Top-level field nullability is preserved. Nested fields parsed
+  * from Spark `DataType.simpleString` are marked nullable because that representation does not
+  * carry nested `StructField.nullable` metadata.
   */
 final case class SparkFieldInfo(name: String, sparkType: String, nullable: Boolean)
 
 object SparkSchemaAdapter:
-  /** Convert a flat Spark field description into a ProofGate `RuntimeShape`.
+  /** Convert a Spark `simpleString` field description into a ProofGate `RuntimeShape`.
     *
     * The adapter supports Spark primitive types and the standard wrappers Spark surfaces through
     * `simpleString`: `array<T>`, `map<K,V>`, and nested `struct<name:T,...>`. Unknown Spark types

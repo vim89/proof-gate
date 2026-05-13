@@ -116,23 +116,25 @@ private object SchemaConformsMacro:
     val contractShape = shapeOf(using q)(TypeRepr.of[Contract])
     val rawDiffs = compare("", outShape, contractShape)
 
-    // Backward: Out may add fields beyond Contract. Missing and type drift fail.
+    // Backward: Out may add fields beyond Contract. Missing required fields and type drift fail.
     // Forward: Out may drop fields Contract declares. Extras and type drift fail.
     val diffs =
       if isBackward then
         rawDiffs.filter {
-          case Diff.Extra(_) => false
-          case _             => true
+          case Diff.Extra(_)             => false
+          case Diff.Missing(_, _, true)  => false
+          case Diff.Missing(_, _, false) => true
+          case _                         => true
         }
       else if isForward then
         rawDiffs.filter {
-          case Diff.Missing(_, _) => false
-          case _                  => true
+          case Diff.Missing(_, _, _) => false
+          case _                     => true
         }
       else rawDiffs
 
     if diffs.nonEmpty then
-      val missing = diffs.collect { case Diff.Missing(path, expected) =>
+      val missing = diffs.collect { case Diff.Missing(path, expected, _) =>
         s"$path : ${render(expected)}"
       }
       val extra = diffs.collect { case Diff.Extra(path) => path }
@@ -161,7 +163,7 @@ private object SchemaConformsMacro:
   private final case class Field(name: String, shape: Shape)
 
   private enum Diff:
-    case Missing(path: String, expected: Shape)
+    case Missing(path: String, expected: Shape, optional: Boolean)
     case Extra(path: String)
     case Mismatch(path: String, expected: Shape, found: Shape)
 
@@ -279,7 +281,7 @@ private object SchemaConformsMacro:
         val missing =
           expectedFields.collect {
             case field if !foundByName.contains(field.name) =>
-              Diff.Missing(pathOf(path, field.name), field.shape)
+              Diff.Missing(pathOf(path, field.name), field.shape, isOptional(field.shape))
           }
 
         val extra =
@@ -302,6 +304,11 @@ private object SchemaConformsMacro:
 
   private def pathOf(base: String, segment: String): String =
     if base.isEmpty then segment else s"$base.$segment"
+
+  private def isOptional(shape: Shape): Boolean =
+    shape match
+      case Shape.Optional(_) => true
+      case _                 => false
 
   private def render(shape: Shape): String =
     shape match

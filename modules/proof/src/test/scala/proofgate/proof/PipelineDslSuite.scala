@@ -88,9 +88,21 @@ final class PipelineDslSuite extends FunSuite:
       segment: String
   )
 
+  final case class OrderContractWithOptional(
+      id: Long,
+      email: String,
+      amount: BigDecimal,
+      segment: Option[String]
+  )
+
   test("SchemaConforms accepts Backward when Out adds fields beyond Contract"):
     val evidence =
       SchemaConforms.conforms[OrderOutWithExtra, OrderContract, SchemaPolicy.Backward.type]
+    assert(evidence != null)
+
+  test("SchemaConforms accepts Backward when a missing Contract field is optional"):
+    val evidence =
+      SchemaConforms.conforms[OrderOut, OrderContractWithOptional, SchemaPolicy.Backward.type]
     assert(evidence != null)
 
   test("SchemaConforms rejects Backward when Contract fields are missing in Out"):

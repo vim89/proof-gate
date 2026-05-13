@@ -73,6 +73,13 @@ lazy val fixturesCompileFail = module("fixturesCompileFail", "fixtures-compile-f
   )
   .dependsOn(model, proof)
 
+lazy val fixturesPolicyFail = module("fixturesPolicyFail", "fixtures-policy-fail")
+  .settings(
+    name := "proof-gate-fixtures-policy-fail",
+    moduleName := "proof-gate-fixtures-policy-fail"
+  )
+  .dependsOn(model)
+
 lazy val root = project
   .in(file("."))
   .aggregate(model, proof, runtimeSpark, cli, examples, fixturesCompileFail)

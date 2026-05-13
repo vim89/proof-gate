@@ -35,6 +35,9 @@ jobs:
           sbt "cli / runMain proofgate.cli.Main review \
             --revision $GITHUB_SHA \
             --out target/proof-gate-review.md"
+          sbt "cli / runMain proofgate.cli.Main review \
+            --revision $GITHUB_SHA \
+            --out target/proof-gate-review.json"
 
       - name: Publish job summary
         if: always()

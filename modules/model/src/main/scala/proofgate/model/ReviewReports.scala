@@ -120,3 +120,79 @@ object ReviewReportMarkdown:
 
   private def renderRisk(risk: RiskLevel): String =
     risk.toString
+
+object ReviewReportJson:
+  def render(report: ReviewReport): String =
+    val counts = ReviewReports.severityCounts(report)
+    val verdict = ReviewReports.finalVerdict(report)
+    val findings = ReviewReports.findings(report)
+
+    obj(
+      "schemaVersion" -> string("proof-gate.report.v1"),
+      "revision" -> string(report.revision.value),
+      "summary" -> string(report.summary.trim),
+      "verdict" -> string(verdict.toString),
+      "severityCounts" -> renderSeverityCounts(counts),
+      "risk" -> renderRiskAssessment(report.risk),
+      "findings" -> array(findings.map(renderFinding)),
+      "optionalQuestions" -> array(report.optionalQuestions.map(string))
+    ) + "\n"
+
+  private def renderSeverityCounts(counts: SeverityCounts): String =
+    obj(
+      "blocker" -> number(counts.blocker),
+      "mustFix" -> number(counts.mustFix),
+      "shouldFix" -> number(counts.shouldFix),
+      "nit" -> number(counts.nit),
+      "total" -> number(counts.total)
+    )
+
+  private def renderRiskAssessment(risk: RiskAssessment): String =
+    obj(
+      "apiBreakingChange" -> string(risk.apiBreakingChange.toString),
+      "binaryCompatibility" -> string(risk.binaryCompatibility.toString),
+      "sourceCompatibility" -> string(risk.sourceCompatibility.toString),
+      "crossBuild" -> string(risk.crossBuild.toString),
+      "performance" -> string(risk.performance.toString),
+      "concurrency" -> string(risk.concurrency.toString),
+      "security" -> string(risk.security.toString)
+    )
+
+  private def renderFinding(finding: Finding): String =
+    obj(
+      "stage" -> string(finding.stage.toString),
+      "ruleId" -> string(finding.ruleId.value),
+      "severity" -> string(finding.severity.toString),
+      "message" -> string(finding.message),
+      "path" -> optionalString(finding.path),
+      "hint" -> optionalString(finding.hint)
+    )
+
+  private def obj(fields: (String, String)*): String =
+    fields.map((name, value) => s"${string(name)}:$value").mkString("{", ",", "}")
+
+  private def array(values: Iterable[String]): String =
+    values.mkString("[", ",", "]")
+
+  private def string(value: String): String =
+    "\"" + escape(value) + "\""
+
+  private def optionalString(value: Option[String]): String =
+    value.fold("null")(string)
+
+  private def number(value: Int): String =
+    value.toString
+
+  private def escape(value: String): String =
+    value.flatMap:
+      case '"'                    => "\\\""
+      case '\\'                   => "\\\\"
+      case '\b'                   => "\\b"
+      case '\f'                   => "\\f"
+      case '\n'                   => "\\n"
+      case '\r'                   => "\\r"
+      case '\t'                   => "\\t"
+      case char if char.isControl =>
+        "\\u%04x".format(char.toInt)
+      case char =>
+        char.toString

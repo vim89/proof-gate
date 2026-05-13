@@ -85,6 +85,37 @@ final class ReviewReportsSuite extends FunSuite:
 
     assert(ReviewReportMarkdown.render(report).contains("- Should this sink be append-only?"))
 
+  test("json report renders canonical machine-readable fields"):
+    val report = ReviewReport(
+      revision = Revision.unsafe("abc123"),
+      summary = "Schema proof failed.",
+      risk = RiskAssessment.empty.copy(security = RiskLevel.Medium),
+      stageOutcomes = Vector(StageOutcome(Verdict.Reject, Vector(blockerFinding), None)),
+      optionalQuestions = Vector("Should this sink be append-only?")
+    )
+    val json = ReviewReportJson.render(report)
+
+    assert(json.contains(""""schemaVersion":"proof-gate.report.v1""""))
+    assert(json.contains(""""revision":"abc123""""))
+    assert(json.contains(""""verdict":"Reject""""))
+    assert(json.contains(""""blocker":1"""))
+    assert(json.contains(""""security":"Medium""""))
+    assert(json.contains(""""ruleId":"proof.schema-exact""""))
+    assert(json.contains(""""path":"pipelines/orders.scala""""))
+    assert(json.contains(""""optionalQuestions":["Should this sink be append-only?"]"""))
+
+  test("json report escapes strings"):
+    val report = ReviewReport(
+      revision = Revision.unsafe("abc123"),
+      summary = "Quote \" and newline\nare escaped.",
+      risk = RiskAssessment.empty,
+      stageOutcomes = Vector.empty,
+      optionalQuestions = Vector.empty
+    )
+    val json = ReviewReportJson.render(report)
+
+    assert(json.contains("""Quote \" and newline\nare escaped."""))
+
   private val blockerFinding: Finding =
     Finding(
       stage = StageName.Proof,

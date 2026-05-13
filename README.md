@@ -59,10 +59,17 @@ sbt test
 sbt reviewGates
 sbt reviewPolicy
 sbt reviewConveyor
+sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proof-gate-review.md"
+```
+
+Example rejecting review packet:
+
+```bash
+sbt "cli / runMain proofgate.cli.Main review --revision abc123 --finding 'proof|blocker|proof.schema-exact|Missing customer_id|pipelines/orders.scala|Add the field'"
 ```
 
 ## Status
 
 This is an early POC scaffold.
 The current code proves the build, module wiring, typed-error model, typestate assembly, the first exact structural
-contract proof, and an in-memory runtime shape pin.
+contract proof, an in-memory runtime shape pin, and a CI-friendly Markdown review report path.

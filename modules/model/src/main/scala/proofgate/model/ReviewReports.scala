@@ -34,8 +34,8 @@ object ReviewReports:
     if report.stageOutcomes.exists(_.verdict == Verdict.Error) then Verdict.Error
     else if report.stageOutcomes.exists(_.verdict == Verdict.Reject) then Verdict.Reject
     else if findings(report).exists(isRejecting) then Verdict.Reject
-    else if report.stageOutcomes.nonEmpty && report.stageOutcomes.forall(_.verdict == Verdict.Skip) then
-      Verdict.Skip
+    else if report.stageOutcomes.nonEmpty && report.stageOutcomes.forall(_.verdict == Verdict.Skip)
+    then Verdict.Skip
     else Verdict.Pass
 
   def findingsByStage(report: ReviewReport): Vector[(StageName, Vector[Finding])] =

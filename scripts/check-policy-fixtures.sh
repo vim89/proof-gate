@@ -19,6 +19,7 @@ required_rules=(
   "NoKeywordTry"
   "NoKeywordCatch"
   "NoKeywordThrow"
+  "NoRequire"
 )
 
 for rule in "${required_rules[@]}"; do

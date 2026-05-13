@@ -114,7 +114,8 @@ private object SchemaConformsMacro:
   ): Expr[SchemaConforms[Out, Contract, P]] =
     import q.reflect.*
 
-    val isExact =
+    // Exact is the unordered case-insensitive default; ExactUnorderedCI is its explicit alias.
+    val isUnorderedCI =
       TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Exact.type] ||
         TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.ExactUnorderedCI.type]
     val isExactOrdered = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.ExactOrdered.type]
@@ -124,7 +125,7 @@ private object SchemaConformsMacro:
     val isForward = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Forward.type]
     val isFull = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Full.type]
 
-    if !(isExact || isExactOrdered || isExactOrderedCI || isExactByPosition || isBackward || isForward || isFull)
+    if !(isUnorderedCI || isExactOrdered || isExactOrderedCI || isExactByPosition || isBackward || isForward || isFull)
     then
       report.errorAndAbort(
         s"Unsupported SchemaPolicy requested: ${Type.show[P]}"
@@ -132,7 +133,7 @@ private object SchemaConformsMacro:
 
     val outShape = shapeOf(using q)(TypeRepr.of[Out])
     val contractShape = shapeOf(using q)(TypeRepr.of[Contract])
-    val caseInsensitive = isExact || isExactOrderedCI
+    val caseInsensitive = isUnorderedCI || isExactOrderedCI
     val rawDiffs =
       if isExactByPosition then compareByPosition("", outShape, contractShape)
       else if isExactOrdered || isExactOrderedCI then
@@ -140,7 +141,9 @@ private object SchemaConformsMacro:
       else compareByName("", outShape, contractShape, caseInsensitive)
 
     // Backward: Out may add fields beyond Contract. Missing required fields and type drift fail.
-    // Forward: Out may drop fields Contract declares. Extras and type drift fail.
+    // Optional fields and fields with defaults may be absent from Out.
+    // Forward: Out may drop fields Contract declares. Extras always fail because new
+    // consumers reading Contract do not expect them; type drift always fails.
     val diffs =
       if isFull then Nil
       else if isBackward then

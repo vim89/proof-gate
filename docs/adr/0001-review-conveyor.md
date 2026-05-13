@@ -33,10 +33,13 @@ The intended flow is:
 - `proof`: use Scala types, typestate, and narrow compile-time proof to reject invalid structure
 - `policy`: use static rules to reject forbidden patterns and unsafe architecture
 - `pin`: run explicit sink-boundary checks for facts that compile time cannot know
-- `people`: only after machine gates pass, allow AI or human review
+- `people`: only after machine gates pass, allow AI and human review
 
 The repository will stay local-first and vendor-neutral.
 The core will not depend on a hosted service, database, web UI, or LLM vendor SDK.
+
+The `people` stage is intentionally conjunctive, not optional.
+AI review can assist, summarize, and challenge, but it does not replace human ownership.
 
 ## Implementation shape
 

@@ -12,6 +12,7 @@ The core idea is simple:
 5. people
 
 The first reviewer should be machine-enforced structure, not a human and not another LLM.
+After those gates pass, review is AI and human, not AI or human.
 
 ## Review flow
 

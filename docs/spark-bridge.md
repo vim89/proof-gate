@@ -40,11 +40,14 @@ runtime diff still surfaces them in the review report.
 
 This bridge uses `DataType.simpleString`. That is deliberate for the POC because
 it avoids a Spark dependency in the core artifact graph, but it is not a full
-fidelity `StructType` traversal. Top-level `StructField.nullable` is preserved.
-Nested fields inside `struct<...>` are marked nullable because `simpleString`
-does not carry nested nullability metadata. Use the compile-derived contract
-shape as the expected side when nested nullability must be exact, or add the
-optional Spark example module below and traverse Spark `StructType` directly.
+fidelity `StructType` traversal. Top-level `StructField.nullable` is preserved
+for Backward missing-field decisions, while exact runtime comparison ignores
+field-level nullability to match the compile-time contract proof. Nested fields
+inside `struct<...>` are marked nullable because `simpleString` does not carry
+nested nullability metadata. Use the compile-derived contract shape as the
+expected side when nested optionality inside arrays and maps must be exact, or
+add the optional Spark example module below and traverse Spark `StructType`
+directly.
 
 ## End-to-end at the sink
 

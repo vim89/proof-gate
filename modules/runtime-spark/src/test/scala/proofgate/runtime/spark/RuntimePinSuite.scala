@@ -59,7 +59,7 @@ final class RuntimePinSuite extends FunSuite:
     assertEquals(findings.map(_.path), Vector(Some("tags[]")))
     assert(findings.head.message.contains("expected Option[String], found String"))
 
-  test("runtime pin reports nested field nullability drift"):
+  test("runtime pin ignores field-level nullability drift"):
     final case class ActualAddress(city: String, zip: Int)
     final case class ExpectedAddress(city: String, zip: Option[Int])
     final case class Actual(address: ActualAddress)
@@ -69,8 +69,18 @@ final class RuntimePinSuite extends FunSuite:
       summon[RuntimePin[SchemaPolicy.Exact.type]]
         .validate(RuntimeShapeEncoder.shapeOf[Actual], RuntimeShapeEncoder.shapeOf[Expected])
 
-    assertEquals(findings.map(_.path), Vector(Some("address.zip")))
-    assert(findings.head.message.contains("expected Int nullable, found Int"))
+    assertEquals(findings, Vector.empty)
+
+  test("runtime pin rejects nested optionality drift inside arrays"):
+    final case class Actual(tags: List[String])
+    final case class Expected(tags: List[Option[String]])
+
+    val findings =
+      summon[RuntimePin[SchemaPolicy.Exact.type]]
+        .validate(RuntimeShapeEncoder.shapeOf[Actual], RuntimeShapeEncoder.shapeOf[Expected])
+
+    assertEquals(findings.map(_.path), Vector(Some("tags[]")))
+    assert(findings.head.message.contains("expected Option[String], found String"))
 
   test("runtime pin accepts ExactUnorderedCI when order and case differ"):
     final case class Actual(EMAIL: String, id: Long)
@@ -81,6 +91,21 @@ final class RuntimePinSuite extends FunSuite:
         .validate(RuntimeShapeEncoder.shapeOf[Actual], RuntimeShapeEncoder.shapeOf[Expected])
 
     assertEquals(findings, Vector.empty)
+
+  test("runtime pin rejects case-insensitive duplicate names"):
+    val actual = RuntimeShape(
+      Vector(
+        RuntimeField("Email", RuntimeType.Primitive("String"), nullable = false),
+        RuntimeField("email", RuntimeType.Primitive("String"), nullable = false)
+      )
+    )
+    val expected =
+      RuntimeShape(Vector(RuntimeField("email", RuntimeType.Primitive("String"), nullable = false)))
+
+    val findings =
+      summon[RuntimePin[SchemaPolicy.Exact.type]].validate(actual, expected)
+
+    assert(findings.exists(_.message.contains("duplicate actual field names [Email, email]")))
 
   test("runtime pin rejects ExactOrdered when fields are reordered"):
     final case class Actual(email: String, id: Long)

@@ -7,6 +7,16 @@ enum SchemaPolicy:
   case Exact, ExactUnorderedCI, ExactOrdered, ExactOrderedCI, ExactByPosition, Backward, Forward,
     Full
 
+object SchemaPolicy:
+  type Exact = SchemaPolicy.Exact.type
+  type ExactUnorderedCI = SchemaPolicy.ExactUnorderedCI.type
+  type ExactOrdered = SchemaPolicy.ExactOrdered.type
+  type ExactOrderedCI = SchemaPolicy.ExactOrderedCI.type
+  type ExactByPosition = SchemaPolicy.ExactByPosition.type
+  type Backward = SchemaPolicy.Backward.type
+  type Forward = SchemaPolicy.Forward.type
+  type Full = SchemaPolicy.Full.type
+
 trait Source[A]
 
 trait Sink[A]
@@ -261,12 +271,14 @@ private object SchemaConformsMacro:
           val params = tpe.typeSymbol.primaryConstructor.paramSymss.flatten
           Shape.Struct(
             params.map { param =>
-              val fieldShape = shapeOf(using q)(tpe.memberType(param))
+              val fieldType = tpe.memberType(param)
+              val maybeOption = optionArg(fieldType)
+              val fieldShape = shapeOf(using q)(maybeOption.getOrElse(fieldType))
               Field(
                 name = param.name,
                 shape = fieldShape,
                 hasDefault = param.flags.is(Flags.HasDefault),
-                optional = isOptional(fieldShape)
+                optional = maybeOption.isDefined
               )
             }
           )
@@ -301,6 +313,10 @@ private object SchemaConformsMacro:
         keyDiffs ++ compareByName(s"$path<value>", leftValue, rightValue, caseInsensitive)
 
       case (Shape.Struct(foundFields), Shape.Struct(expectedFields)) =>
+        val duplicateDiffs =
+          duplicateNameDiffs(path, foundFields, "Out", caseInsensitive) ++
+            duplicateNameDiffs(path, expectedFields, "Contract", caseInsensitive)
+
         val foundByName =
           foundFields.map(field => normalize(field.name, caseInsensitive) -> field).toMap
         val expectedByName =
@@ -331,7 +347,7 @@ private object SchemaConformsMacro:
             }
           }
 
-        missing ++ extra ++ nested
+        duplicateDiffs ++ missing ++ extra ++ nested
 
       case _ =>
         List(Diff.Mismatch(path, expected, found))
@@ -453,6 +469,26 @@ private object SchemaConformsMacro:
 
   private def sameName(left: String, right: String, caseInsensitive: Boolean): Boolean =
     if caseInsensitive then left.equalsIgnoreCase(right) else left == right
+
+  private def duplicateNameDiffs(
+      path: String,
+      fields: List[Field],
+      side: String,
+      caseInsensitive: Boolean
+  ): List[Diff] =
+    fields
+      .groupBy(field => normalize(field.name, caseInsensitive))
+      .values
+      .collect {
+        case duplicates if duplicates.length > 1 =>
+          val names = duplicates.map(_.name).sorted.mkString("[", ", ", "]")
+          Diff.Mismatch(
+            pathOf(path, "<fields>"),
+            Shape.Primitive(s"unique $side field names"),
+            Shape.Primitive(s"duplicate $side field names $names")
+          )
+      }
+      .toList
 
   private def isOptional(shape: Shape): Boolean =
     shape match

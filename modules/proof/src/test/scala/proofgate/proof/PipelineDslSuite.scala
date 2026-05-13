@@ -32,12 +32,31 @@ final class PipelineDslSuite extends FunSuite:
     val evidence = SchemaConforms.conforms[Out, OrderContract, SchemaPolicy.Exact.type]
     assert(evidence != null)
 
+  test("SchemaConforms accepts Exact when field-level optionality differs"):
+    final case class Out(id: Long, email: String, amount: BigDecimal)
+    final case class Contract(id: Long, email: Option[String], amount: BigDecimal)
+
+    val evidence = SchemaConforms.conforms[Out, Contract, SchemaPolicy.Exact.type]
+    assert(evidence != null)
+
   test("SchemaConforms accepts ExactUnorderedCI when order and case differ"):
     final case class Out(AMOUNT: BigDecimal, Email: String, id: Long)
 
     val evidence =
       SchemaConforms.conforms[Out, OrderContract, SchemaPolicy.ExactUnorderedCI.type]
     assert(evidence != null)
+
+  test("SchemaConforms rejects duplicate names under case-insensitive Exact"):
+    val errors = compileErrors("""
+      import proofgate.proof.*
+
+      final case class Out(Email: String, email: String)
+      final case class Contract(email: String)
+
+      val evidence = summon[SchemaConforms[Out, Contract, SchemaPolicy.Exact.type]]
+    """)
+
+    assert(errors.contains("duplicate Out field names [Email, email]"))
 
   test("SchemaConforms rejects ExactOrdered when fields are reordered"):
     val errors = compileErrors("""
@@ -149,6 +168,18 @@ final class PipelineDslSuite extends FunSuite:
   test("SchemaConforms accepts Backward when a missing Contract field is optional"):
     val evidence =
       SchemaConforms.conforms[OrderOut, OrderContractWithOptional, SchemaPolicy.Backward.type]
+    assert(evidence != null)
+
+  test("SchemaConforms accepts Backward when a missing Contract field has a default"):
+    final case class ContractWithDefault(
+        id: Long,
+        email: String,
+        amount: BigDecimal,
+        region: String = "IN"
+    )
+
+    val evidence =
+      SchemaConforms.conforms[OrderOut, ContractWithDefault, SchemaPolicy.Backward.type]
     assert(evidence != null)
 
   test("SchemaConforms rejects Backward when Contract fields are missing in Out"):

@@ -116,6 +116,10 @@ object RuntimeShapeDiff:
       expectedFields: Vector[RuntimeField],
       caseInsensitive: Boolean
   ): Vector[RuntimeShapeDiff] =
+    val duplicateDiffs =
+      duplicateNameDiffs(basePath, actualFields, "actual", caseInsensitive) ++
+        duplicateNameDiffs(basePath, expectedFields, "expected", caseInsensitive)
+
     val actualByName =
       actualFields.map(field => normalize(field.name, caseInsensitive) -> field).toMap
     val expectedByName =
@@ -146,7 +150,7 @@ object RuntimeShapeDiff:
         }
       }
 
-    missing ++ extra ++ nested
+    duplicateDiffs ++ missing ++ extra ++ nested
 
   private def compareFieldsBackward(
       basePath: String,
@@ -255,14 +259,7 @@ object RuntimeShapeDiff:
       expected: RuntimeField,
       caseInsensitive: Boolean
   ): Vector[RuntimeShapeDiff] =
-    val nullability =
-      Option
-        .when(actual.nullable != expected.nullable) {
-          RuntimeShapeDiff(path, renderField(expected), renderField(actual))
-        }
-        .toVector
-
-    nullability ++ compareTypeByName(path, actual.dataType, expected.dataType, caseInsensitive)
+    compareTypeByName(path, actual.dataType, expected.dataType, caseInsensitive)
 
   private def compareFieldOrdered(
       path: String,
@@ -270,42 +267,21 @@ object RuntimeShapeDiff:
       expected: RuntimeField,
       caseInsensitive: Boolean
   ): Vector[RuntimeShapeDiff] =
-    val nullability =
-      Option
-        .when(actual.nullable != expected.nullable) {
-          RuntimeShapeDiff(path, renderField(expected), renderField(actual))
-        }
-        .toVector
-
-    nullability ++ compareTypeOrdered(path, actual.dataType, expected.dataType, caseInsensitive)
+    compareTypeOrdered(path, actual.dataType, expected.dataType, caseInsensitive)
 
   private def compareFieldByPosition(
       path: String,
       actual: RuntimeField,
       expected: RuntimeField
   ): Vector[RuntimeShapeDiff] =
-    val nullability =
-      Option
-        .when(actual.nullable != expected.nullable) {
-          RuntimeShapeDiff(path, renderField(expected), renderField(actual))
-        }
-        .toVector
-
-    nullability ++ compareTypeByPosition(path, actual.dataType, expected.dataType)
+    compareTypeByPosition(path, actual.dataType, expected.dataType)
 
   private def compareFieldBackward(
       path: String,
       actual: RuntimeField,
       expected: RuntimeField
   ): Vector[RuntimeShapeDiff] =
-    val nullability =
-      Option
-        .when(actual.nullable != expected.nullable) {
-          RuntimeShapeDiff(path, renderField(expected), renderField(actual))
-        }
-        .toVector
-
-    nullability ++ compareTypeBackward(path, actual.dataType, expected.dataType)
+    compareTypeBackward(path, actual.dataType, expected.dataType)
 
   private def compareTypeByName(
       path: String,
@@ -386,6 +362,26 @@ object RuntimeShapeDiff:
 
   private def sameName(left: String, right: String, caseInsensitive: Boolean): Boolean =
     if caseInsensitive then left.equalsIgnoreCase(right) else left == right
+
+  private def duplicateNameDiffs(
+      basePath: String,
+      fields: Vector[RuntimeField],
+      side: String,
+      caseInsensitive: Boolean
+  ): Vector[RuntimeShapeDiff] =
+    fields
+      .groupBy(field => normalize(field.name, caseInsensitive))
+      .values
+      .collect {
+        case duplicates if duplicates.length > 1 =>
+          val names = duplicates.map(_.name).sorted.mkString("[", ", ", "]")
+          RuntimeShapeDiff(
+            pathOf(basePath, "<fields>"),
+            s"unique $side field names",
+            s"duplicate $side field names $names"
+          )
+      }
+      .toVector
 
   private def renderField(field: RuntimeField): String =
     val nullable = if field.nullable then " nullable" else ""

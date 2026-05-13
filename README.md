@@ -91,14 +91,15 @@ The expected-failure fixtures prove that these patterns are blocked:
 `SchemaConforms[Out, Contract, Policy]` is the compile-time evidence the proof layer requires.
 
 - `SchemaPolicy.Exact`: unordered by name, case-insensitive, same field set, types, and nesting.
+  Field-level nullability is ignored; nested optionality inside arrays and maps is still checked.
 - `SchemaPolicy.ExactUnorderedCI`: explicit alias for unordered case-insensitive exact matching.
 - `SchemaPolicy.ExactOrdered`: ordered by field name, case-sensitive.
 - `SchemaPolicy.ExactOrderedCI`: ordered by field name, case-insensitive.
 - `SchemaPolicy.ExactByPosition`: ordered by position only; field names are ignored.
 - `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Required `Contract`
   fields must still exist in `Out` with the declared type. Missing optional `Contract`
-  fields are accepted. Old consumers reading `Contract` keep working when the producer
-  adds fields.
+  fields and missing fields with defaults are accepted. Old consumers reading `Contract`
+  keep working when the producer adds fields.
 - `SchemaPolicy.Forward`: `Out` may drop fields that `Contract` declares. Extra fields
   in `Out` and type drift still fail. Old producers stay compatible with new consumers
   that have widened the contract.
@@ -127,11 +128,13 @@ The adapter understands Spark primitive types, `array<T>`, `map<K,V>`, and neste
 expressions. The runtime pin diff treats unknown Spark types as raw names so the reviewer can
 either fix the type or extend the adapter.
 
-This is a lightweight bridge, not a full Spark-dependent `StructType` adapter. It preserves
-top-level `StructField.nullable`, but nested fields parsed from `simpleString` are marked nullable
-because Spark does not encode nested nullability in that string form. Use the compile-derived
-contract shape as the expected side when nested nullability must be exact, or add the optional
-Spark example module described in the docs.
+This is a lightweight bridge, not a full Spark-dependent `StructType` adapter. It records
+top-level `StructField.nullable` so Backward can allow missing nullable fields, but exact
+runtime comparison ignores field-level nullability to match the contract proof semantics.
+Nested fields parsed from `simpleString` are marked nullable because Spark does not encode nested
+nullability in that string form. Use the compile-derived contract shape as the expected side when
+nested optionality inside arrays and maps must be exact, or add the optional Spark example module
+described in the docs.
 
 See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, including the
 `Dataset[A] => RuntimeShape` helper and a sink-time validate call.

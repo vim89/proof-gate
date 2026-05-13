@@ -20,4 +20,8 @@ object ForbiddenPolicyDraft:
   def rawThrow(): Nothing =
     throw new IllegalStateException("policy fixture rejected")
 
+  def rawRequire(value: String): String =
+    require(value.nonEmpty, "value required")
+    value
+
   private object ConfigFactory

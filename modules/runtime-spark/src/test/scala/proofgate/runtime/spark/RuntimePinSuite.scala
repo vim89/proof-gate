@@ -137,6 +137,21 @@ final class RuntimePinSuite extends FunSuite:
 
     assertEquals(findings, Vector.empty)
 
+  test("runtime pin rejects duplicate names under Backward"):
+    val actual = RuntimeShape(
+      Vector(
+        RuntimeField("id", RuntimeType.Primitive("Long"), nullable = false),
+        RuntimeField("id", RuntimeType.Primitive("Long"), nullable = false)
+      )
+    )
+    val expected =
+      RuntimeShape(Vector(RuntimeField("id", RuntimeType.Primitive("Long"), nullable = false)))
+
+    val findings =
+      summon[RuntimePin[SchemaPolicy.Backward.type]].validate(actual, expected)
+
+    assert(findings.exists(_.message.contains("duplicate actual field names [id, id]")))
+
   test("runtime pin accepts Backward when expected missing field is nullable"):
     final case class Actual(id: Long)
     final case class Expected(id: Long, email: Option[String])

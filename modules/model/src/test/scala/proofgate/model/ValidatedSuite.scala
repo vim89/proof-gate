@@ -9,8 +9,8 @@ final class ValidatedSuite extends FunSuite:
   test("invalid short-circuits map"):
     val errors = Vector("bad")
     assertEquals(
-      Validated.invalidAll(errors).map(_.toString).toEither,
-      Left(errors)
+      Validated.fromErrors(errors).map(_.map(_.toString).toEither),
+      Some(Left(errors))
     )
 
   test("andThen sequences over Valid and stops at Invalid"):
@@ -49,11 +49,11 @@ final class ValidatedSuite extends FunSuite:
 
     assertEquals(Validated.sequence(items), Validated.Valid(Vector(1, 2, 3)))
 
-  test("invalidAll rejects empty error vectors"):
-    interceptMessage[IllegalArgumentException](
-      "requirement failed: Invalid must hold at least one error"
-    ):
-      Validated.invalidAll(Vector.empty[String])
+  test("fromErrors rejects empty error vectors without throwing"):
+    assertEquals(Validated.fromErrors(Vector.empty[String]), None)
+
+  test("invalidAll requires at least one error by construction"):
+    assertEquals(Validated.invalidAll("first", "second").toEither, Left(Vector("first", "second")))
 
   test("Invalid constructor is not public outside proofgate"):
     val errors = compileErrors("""

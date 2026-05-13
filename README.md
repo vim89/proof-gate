@@ -85,6 +85,7 @@ The expected-failure fixtures prove that these patterns are blocked:
 - direct `ConfigFactory`
 - raw `try` / `catch`
 - raw `throw`
+- raw `require`
 
 ## Schema policies
 

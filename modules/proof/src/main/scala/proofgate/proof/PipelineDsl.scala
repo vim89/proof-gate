@@ -490,11 +490,6 @@ private object SchemaConformsMacro:
       }
       .toList
 
-  private def isOptional(shape: Shape): Boolean =
-    shape match
-      case Shape.Optional(_) => true
-      case _                 => false
-
   private def renderField(field: Field): String =
     val optional = if field.optional then " (optional)" else ""
     val default = if field.hasDefault then " (default)" else ""

@@ -45,9 +45,11 @@ object Validated:
 
   def invalid[E](error: E): Validated[E, Nothing] = InvalidImpl(Vector(error))
 
-  def invalidAll[E](errors: Vector[E]): Validated[E, Nothing] =
-    require(errors.nonEmpty, "Invalid must hold at least one error")
-    InvalidImpl(errors)
+  def invalidAll[E](first: E, rest: E*): Validated[E, Nothing] =
+    InvalidImpl((first +: rest).toVector)
+
+  def fromErrors[E](errors: Vector[E]): Option[Validated[E, Nothing]] =
+    Option.when(errors.nonEmpty)(InvalidImpl(errors))
 
   def fromEither[E, A](either: Either[E, A]): Validated[E, A] =
     either match

@@ -157,6 +157,10 @@ object RuntimeShapeDiff:
       actualFields: Vector[RuntimeField],
       expectedFields: Vector[RuntimeField]
   ): Vector[RuntimeShapeDiff] =
+    val duplicateDiffs =
+      duplicateNameDiffs(basePath, actualFields, "actual", caseInsensitive = false) ++
+        duplicateNameDiffs(basePath, expectedFields, "expected", caseInsensitive = false)
+
     val actualByName = actualFields.map(field => field.name -> field).toMap
 
     val missing =
@@ -172,7 +176,7 @@ object RuntimeShapeDiff:
         }
       }
 
-    missing ++ nested
+    duplicateDiffs ++ missing ++ nested
 
   private def compareFieldsOrdered(
       basePath: String,

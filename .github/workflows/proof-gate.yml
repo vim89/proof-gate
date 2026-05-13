@@ -1,0 +1,50 @@
+name: ProofGate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Review conveyor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Run review conveyor
+        run: sbt reviewConveyor
+
+      - name: Generate ProofGate report
+        run: |
+          sbt "cli / runMain proofgate.cli.Main review \
+            --revision $GITHUB_SHA \
+            --out target/proof-gate-review.md"
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          if [ -f target/proof-gate-review.md ]; then
+            cat target/proof-gate-review.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "# ProofGate review report"
+              echo
+              echo "ProofGate report was not generated."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

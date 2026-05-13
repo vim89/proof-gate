@@ -63,10 +63,12 @@ sbt reviewConveyor
 sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proof-gate-review.md"
 ```
 
+The GitHub Actions workflow runs the same conveyor and publishes the generated Markdown report to the job summary.
+
 Example rejecting review packet:
 
 ```bash
-sbt "cli / runMain proofgate.cli.Main review --revision abc123 --finding 'proof|blocker|proof.schema-exact|Missing customer_id|pipelines/orders.scala|Add the field'"
+sbt "cli / runMain proofgate.cli.Main review --revision abc123 --finding proof|blocker|proof.schema-exact|Missing_customer_id|pipelines/orders.scala|Add_the_field"
 ```
 
 ## Status

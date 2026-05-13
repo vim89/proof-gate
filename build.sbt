@@ -1,5 +1,5 @@
 val scala3Version = "3.8.3"
-val munitVersion  = "1.3.0"
+val munitVersion = "1.3.0"
 
 ThisBuild / organization := "com.vitthalmirji"
 ThisBuild / version := "0.1.0-SNAPSHOT"
@@ -27,7 +27,7 @@ def module(id: String): Project =
 
 def module(id: String, path: String): Project =
   Project(id, file(s"modules/$path"))
-    .settings(commonSettings*)
+    .settings(commonSettings *)
     .settings(
       publish / skip := true
     )

@@ -107,7 +107,8 @@ object ReviewError:
   final case class RuntimePin(path: Option[String], message: String) extends ReviewError:
     val stage: StageName = StageName.Pin
 
-  final case class Infrastructure(message: String, cause: Option[Throwable] = None) extends ReviewError:
+  final case class Infrastructure(message: String, cause: Option[Throwable] = None)
+      extends ReviewError:
     val stage: StageName = StageName.People
 
 type Result[A] = Either[ReviewError, A]

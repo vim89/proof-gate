@@ -116,6 +116,9 @@ The adapter understands Spark primitive types, `array<T>`, `map<K,V>`, and neste
 expressions. The runtime pin diff treats unknown Spark types as raw names so the reviewer can
 either fix the type or extend the adapter.
 
+See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, including the
+`Dataset[A] => RuntimeShape` helper and a sink-time validate call.
+
 ## Status
 
 This is an early POC scaffold.

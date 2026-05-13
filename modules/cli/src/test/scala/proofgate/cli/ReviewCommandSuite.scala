@@ -103,3 +103,20 @@ final class ReviewCommandSuite extends FunSuite:
     assertEquals(result.exitCode, 0)
     assert(result.stdout.contains("stage|severity|ruleId|message[|path[|hint]]"))
     assert(result.stdout.contains("Fields cannot contain the | character"))
+
+  test("review command accumulates errors across malformed options"):
+    val result = ReviewCommand.run(
+      Vector(
+        "review",
+        "--revision",
+        "abc123",
+        "--format",
+        "yaml",
+        "--risk",
+        "performance=Wild"
+      )
+    )
+
+    assertEquals(result.exitCode, 2)
+    assert(result.stderr.contains("Unknown report format: yaml"))
+    assert(result.stderr.contains("Unknown risk level: Wild"))

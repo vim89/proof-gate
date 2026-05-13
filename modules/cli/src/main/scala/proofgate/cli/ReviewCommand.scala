@@ -54,28 +54,76 @@ object ReviewCommand:
 
   private def parseOptions(args: Vector[String]): Either[String, ReviewOptions] =
     parsePairs(args).flatMap: pairs =>
-      pairs
-        .foldLeft[Either[String, ReviewOptions]](Right(ReviewOptions.empty)):
-          case (Right(options), ("--revision", value)) =>
-            Right(options.copy(revision = Some(Revision.unsafe(value))))
-          case (Right(options), ("--summary", value)) =>
-            Right(options.copy(summary = value))
-          case (Right(options), ("--out", value)) =>
-            Right(options.copy(out = Some(Path.of(value))))
-          case (Right(options), ("--format", value)) =>
-            parseFormat(value).map(format => options.copy(format = Some(format)))
-          case (Right(options), ("--question", value)) =>
-            Right(options.copy(optionalQuestions = options.optionalQuestions :+ value))
-          case (Right(options), ("--finding", value)) =>
-            parseFinding(value).map(finding => options.copy(findings = options.findings :+ finding))
-          case (Right(options), ("--risk", value)) =>
-            applyRisk(options, value)
-          case (Right(_), (name, _)) =>
-            Left(s"Unknown option: $name")
-          case (Left(error), _) =>
-            Left(error)
+      // Each pair is validated independently so a user passing several malformed options
+      // sees every problem in one report, not just the first.
+      val perPair: Vector[proofgate.model.Validated[String, ReviewOptions => ReviewOptions]] =
+        pairs.map(applyPair)
+
+      proofgate.model.Validated
+        .sequence(perPair)
+        .toEither
+        .left
+        .map(errors => errors.mkString("; "))
+        .map(updates => updates.foldLeft(ReviewOptions.empty)((acc, update) => update(acc)))
         .flatMap: options =>
           Either.cond(options.revision.nonEmpty, options, "Missing required option: --revision")
+
+  private def applyPair(
+      pair: (String, String)
+  ): proofgate.model.Validated[String, ReviewOptions => ReviewOptions] =
+    pair match
+      case ("--revision", value) =>
+        proofgate.model.Validated.valid(_.copy(revision = Some(Revision.unsafe(value))))
+      case ("--summary", value) =>
+        proofgate.model.Validated.valid(_.copy(summary = value))
+      case ("--out", value) =>
+        proofgate.model.Validated.valid(_.copy(out = Some(Path.of(value))))
+      case ("--format", value) =>
+        proofgate.model.Validated
+          .fromEither(parseFormat(value))
+          .map: format =>
+            (options: ReviewOptions) => options.copy(format = Some(format))
+      case ("--question", value) =>
+        proofgate.model.Validated.valid: options =>
+          options.copy(optionalQuestions = options.optionalQuestions :+ value)
+      case ("--finding", value) =>
+        proofgate.model.Validated
+          .fromEither(parseFinding(value))
+          .map: finding =>
+            (options: ReviewOptions) => options.copy(findings = options.findings :+ finding)
+      case ("--risk", value) =>
+        proofgate.model.Validated.fromEither(parseRiskUpdate(value))
+      case (name, _) =>
+        proofgate.model.Validated.invalid(s"Unknown option: $name")
+
+  private def parseRiskUpdate(value: String): Either[String, ReviewOptions => ReviewOptions] =
+    value.split("=", 2).toVector match
+      case Vector(category, level) =>
+        parseRisk(level).flatMap(risk => updateRiskFn(category, risk))
+      case _ =>
+        Left("Invalid --risk. Use category=level")
+
+  private def updateRiskFn(
+      category: String,
+      level: RiskLevel
+  ): Either[String, ReviewOptions => ReviewOptions] =
+    normalize(category) match
+      case "api" | "apibreakingchange" =>
+        Right(options => options.copy(risk = options.risk.copy(apiBreakingChange = level)))
+      case "binarycompatibility" =>
+        Right(options => options.copy(risk = options.risk.copy(binaryCompatibility = level)))
+      case "sourcecompatibility" =>
+        Right(options => options.copy(risk = options.risk.copy(sourceCompatibility = level)))
+      case "crossbuild" =>
+        Right(options => options.copy(risk = options.risk.copy(crossBuild = level)))
+      case "performance" =>
+        Right(options => options.copy(risk = options.risk.copy(performance = level)))
+      case "concurrency" =>
+        Right(options => options.copy(risk = options.risk.copy(concurrency = level)))
+      case "security" =>
+        Right(options => options.copy(risk = options.risk.copy(security = level)))
+      case _ =>
+        Left(s"Unknown risk category: $category")
 
   private def parsePairs(args: Vector[String]): Either[String, Vector[(String, String)]] =
     def loop(
@@ -121,37 +169,6 @@ object ReviewCommand:
       parsedRuleId <- RuleId.from(ruleId).left.map(error => s"Invalid finding rule id: $error")
       _ <- Either.cond(message.trim.nonEmpty, (), "Finding message cannot be empty")
     yield Finding(parsedStage, parsedRuleId, parsedSeverity, message.trim, path, hint)
-
-  private def applyRisk(options: ReviewOptions, value: String): Either[String, ReviewOptions] =
-    value.split("=", 2).toVector match
-      case Vector(category, level) =>
-        parseRisk(level).flatMap(risk => updateRisk(options, category, risk))
-      case _ =>
-        Left("Invalid --risk. Use category=level")
-
-  private def updateRisk(
-      options: ReviewOptions,
-      category: String,
-      level: RiskLevel
-  ): Either[String, ReviewOptions] =
-    val risk = options.risk
-    normalize(category) match
-      case "api" | "apibreakingchange" =>
-        Right(options.copy(risk = risk.copy(apiBreakingChange = level)))
-      case "binarycompatibility" =>
-        Right(options.copy(risk = risk.copy(binaryCompatibility = level)))
-      case "sourcecompatibility" =>
-        Right(options.copy(risk = risk.copy(sourceCompatibility = level)))
-      case "crossbuild" =>
-        Right(options.copy(risk = risk.copy(crossBuild = level)))
-      case "performance" =>
-        Right(options.copy(risk = risk.copy(performance = level)))
-      case "concurrency" =>
-        Right(options.copy(risk = risk.copy(concurrency = level)))
-      case "security" =>
-        Right(options.copy(risk = risk.copy(security = level)))
-      case _ =>
-        Left(s"Unknown risk category: $category")
 
   private def parseStage(value: String): Either[String, StageName] =
     normalize(value) match

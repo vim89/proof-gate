@@ -104,6 +104,31 @@ final class ReviewReportsSuite extends FunSuite:
     assert(json.contains(""""path":"pipelines/orders.scala""""))
     assert(json.contains(""""optionalQuestions":["Should this sink be append-only?"]"""))
 
+  test("json report v1 keys are stable and renders are deterministic"):
+    val report = ReviewReport(
+      revision = Revision.unsafe("abc123"),
+      summary = "Stable shape.",
+      risk = RiskAssessment.empty,
+      stageOutcomes = Vector(StageOutcome(Verdict.Reject, Vector(blockerFinding), None)),
+      optionalQuestions = Vector("Stable?")
+    )
+
+    val first = ReviewReportJson.render(report)
+    val second = ReviewReportJson.render(report)
+
+    assertEquals(first, second)
+    val required = List(
+      "\"schemaVersion\":\"proof-gate.report.v1\"",
+      "\"revision\":",
+      "\"summary\":",
+      "\"verdict\":",
+      "\"severityCounts\":",
+      "\"risk\":",
+      "\"findings\":",
+      "\"optionalQuestions\":"
+    )
+    required.foreach(token => assert(first.contains(token), s"missing $token"))
+
   test("json report escapes strings"):
     val report = ReviewReport(
       revision = Revision.unsafe("abc123"),

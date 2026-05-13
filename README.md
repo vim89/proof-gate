@@ -69,6 +69,11 @@ sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proo
 
 The GitHub Actions workflow runs the same conveyor and publishes the generated Markdown report to the job summary.
 
+The JSON report carries the version tag `proof-gate.report.v1`. For v0 the JSON format is
+**write-only**: downstream tooling should treat the shape as stable for reads but not yet
+parse it back into ProofGate types. A reader will land alongside the first non-`-SNAPSHOT`
+release.
+
 Example rejecting review packet:
 
 ```bash

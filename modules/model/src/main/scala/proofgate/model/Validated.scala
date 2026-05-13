@@ -60,10 +60,10 @@ object Validated:
   extension [E, A](self: Validated[E, A])
     def zip[B](other: Validated[E, B]): Validated[E, (A, B)] =
       (self, other) match
-        case (Valid(a), Valid(b))               => Valid((a, b))
         case (InvalidImpl(e1), InvalidImpl(e2)) => InvalidImpl(e1 ++ e2)
-        case (InvalidImpl(e), Valid(_))         => InvalidImpl(e)
-        case (Valid(_), InvalidImpl(e))         => InvalidImpl(e)
+        case (InvalidImpl(e), _)                => InvalidImpl(e)
+        case (_, InvalidImpl(e))                => InvalidImpl(e)
+        case (Valid(a), Valid(b))               => Valid((a, b))
 
   /** Collect a sequence of independent validations, accumulating every error. */
   def sequence[E, A](values: Vector[Validated[E, A]]): Validated[E, Vector[A]] =

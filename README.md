@@ -47,11 +47,13 @@ This repository currently targets the stable stack:
 ## Module layout
 
 - `modules/model`: core ADTs, typed errors, report model
-- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof
-- `modules/runtime-spark`: runtime shape derivation and sink-boundary pin checks
+- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof (Exact, Backward)
+- `modules/runtime-spark`: runtime shape derivation, sink-boundary pin checks, Spark schema adapter
 - `modules/cli`: CLI entry point
 - `modules/examples`: tiny usage examples
 - `modules/fixtures-compile-fail`: reference snippets for compile-fail demos
+- `modules/fixtures-policy-fail`: deliberate violations that Scalafix must reject;
+  not aggregated by the root project, run on demand via `scripts/check-policy-fixtures.sh`
 
 ## Commands
 
@@ -84,8 +86,39 @@ The expected-failure fixtures prove that these patterns are blocked:
 - raw `try` / `catch`
 - raw `throw`
 
+## Schema policies
+
+`SchemaConforms[Out, Contract, Policy]` is the compile-time evidence the proof layer requires.
+
+- `SchemaPolicy.Exact`: `Out` and `Contract` must have the same field names, types, and nesting.
+- `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Every `Contract` field
+  must still exist in `Out` with the declared type. Old consumers reading `Contract`
+  keep working when the producer adds fields.
+
+`SchemaPolicy.Forward` is reserved and not yet implemented; the macro reports a clear error
+if it is requested.
+
+## Spark bridge
+
+`SparkSchemaAdapter` converts a flat description of a Spark `StructType` into a `RuntimeShape`
+without forcing this repository to depend on Spark binaries. Callers obtain field info from
+their own Spark session, for example:
+
+```scala
+val info = structType.fields.map(f =>
+  SparkFieldInfo(f.name, f.dataType.simpleString, f.nullable)
+).toVector
+
+val shape = SparkSchemaAdapter.fromSparkFields(info)
+```
+
+The adapter understands Spark primitive types, `array<T>`, `map<K,V>`, and nested `struct<...>`
+expressions. The runtime pin diff treats unknown Spark types as raw names so the reviewer can
+either fix the type or extend the adapter.
+
 ## Status
 
 This is an early POC scaffold.
-The current code proves the build, module wiring, typed-error model, typestate assembly, the first exact structural
-contract proof, an in-memory runtime shape pin, and a CI-friendly Markdown review report path.
+The current code proves the build, module wiring, typed-error model, typestate assembly,
+exact and backward structural contract proofs, an in-memory runtime shape pin, a Spark
+schema bridge, and a CI-friendly Markdown and JSON review report path.

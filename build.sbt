@@ -80,6 +80,10 @@ lazy val fixturesPolicyFail = module("fixturesPolicyFail", "fixtures-policy-fail
   )
   .dependsOn(model)
 
+// fixturesPolicyFail is intentionally not aggregated. Its sources hold
+// patterns that Scalafix must reject. scripts/check-policy-fixtures.sh runs
+// it on demand and inverts the exit code so the conveyor proves the rules
+// are still wired up.
 lazy val root = project
   .in(file("."))
   .aggregate(model, proof, runtimeSpark, cli, examples, fixturesCompileFail)

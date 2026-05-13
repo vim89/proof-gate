@@ -96,3 +96,10 @@ final class ReviewCommandSuite extends FunSuite:
 
     assertEquals(result.exitCode, 2)
     assertEquals(result.stderr, "disk full\n")
+
+  test("help text documents the finding format and its limitation"):
+    val result = ReviewCommand.run(Vector("help"))
+
+    assertEquals(result.exitCode, 0)
+    assert(result.stdout.contains("stage|severity|ruleId|message[|path[|hint]]"))
+    assert(result.stdout.contains("Fields cannot contain the | character"))

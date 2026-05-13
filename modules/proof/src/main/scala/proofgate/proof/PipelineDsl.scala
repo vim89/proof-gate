@@ -103,14 +103,28 @@ private object SchemaConformsMacro:
   ): Expr[SchemaConforms[Out, Contract, P]] =
     import q.reflect.*
 
-    if !(TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Exact.type]) then
+    val isExact = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Exact.type]
+    val isBackward = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Backward.type]
+
+    if !(isExact || isBackward) then
       report.errorAndAbort(
-        s"SchemaConforms currently supports only SchemaPolicy.Exact. Requested: ${Type.show[P]}"
+        s"SchemaConforms supports SchemaPolicy.Exact and SchemaPolicy.Backward. Requested: ${Type.show[P]}"
       )
 
     val outShape = shapeOf(using q)(TypeRepr.of[Out])
     val contractShape = shapeOf(using q)(TypeRepr.of[Contract])
-    val diffs = compare("", outShape, contractShape)
+    val rawDiffs = compare("", outShape, contractShape)
+
+    // Backward policy: Out may add fields beyond Contract. Missing fields and
+    // type mismatches still fail because old consumers reading Contract need
+    // every declared field with its declared type.
+    val diffs =
+      if isBackward then
+        rawDiffs.filter {
+          case Diff.Extra(_) => false
+          case _             => true
+        }
+      else rawDiffs
 
     if diffs.nonEmpty then
       val missing = diffs.collect { case Diff.Missing(path, expected) =>

@@ -80,3 +80,39 @@ final class PipelineDslSuite extends FunSuite:
     """)
 
     assert(errors.contains("Missing attributes: email : String"))
+
+  final case class OrderOutWithExtra(
+      id: Long,
+      email: String,
+      amount: BigDecimal,
+      segment: String
+  )
+
+  test("SchemaConforms accepts Backward when Out adds fields beyond Contract"):
+    val evidence =
+      SchemaConforms.conforms[OrderOutWithExtra, OrderContract, SchemaPolicy.Backward.type]
+    assert(evidence != null)
+
+  test("SchemaConforms rejects Backward when Contract fields are missing in Out"):
+    val errors = compileErrors("""
+      import proofgate.proof.*
+
+      final case class Out(id: Long, email: String)
+      final case class Contract(id: Long, email: String, amount: BigDecimal)
+
+      val evidence = summon[SchemaConforms[Out, Contract, SchemaPolicy.Backward.type]]
+    """)
+
+    assert(errors.contains("Missing attributes: amount : BigDecimal"))
+
+  test("SchemaConforms rejects Backward when field types drift"):
+    val errors = compileErrors("""
+      import proofgate.proof.*
+
+      final case class Out(id: Long, email: Long, amount: BigDecimal)
+      final case class Contract(id: Long, email: String, amount: BigDecimal)
+
+      val evidence = summon[SchemaConforms[Out, Contract, SchemaPolicy.Backward.type]]
+    """)
+
+    assert(errors.contains("email expected String, found Long"))

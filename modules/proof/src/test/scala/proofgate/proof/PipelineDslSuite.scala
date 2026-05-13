@@ -194,17 +194,17 @@ final class PipelineDslSuite extends FunSuite:
 
     assert(errors.contains("Missing attributes: amount : BigDecimal"))
 
-  test("SchemaConforms accepts Forward when Out drops fields Contract declares"):
-    val evidence =
-      SchemaConforms.conforms[OrderOut, OrderContractWithExtra, SchemaPolicy.Forward.type]
-    assert(evidence != null)
-
   final case class OrderContractWithExtra(
       id: Long,
       email: String,
       amount: BigDecimal,
       segment: String
   )
+
+  test("SchemaConforms accepts Forward when Out drops fields Contract declares"):
+    val evidence =
+      SchemaConforms.conforms[OrderOut, OrderContractWithExtra, SchemaPolicy.Forward.type]
+    assert(evidence != null)
 
   test("SchemaConforms rejects Forward when Out adds fields beyond Contract"):
     val errors = compileErrors("""

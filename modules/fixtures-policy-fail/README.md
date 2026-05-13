@@ -16,3 +16,4 @@ Current coverage:
 - direct `ConfigFactory` usage
 - raw `try` / `catch`
 - raw `throw`
+- raw `require`

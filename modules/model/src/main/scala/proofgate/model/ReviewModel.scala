@@ -22,12 +22,12 @@ object RuleId:
     val trimmed = value.trim
     Either.cond(trimmed.nonEmpty, trimmed, "RuleId cannot be empty")
 
-  def unsafe(value: String): RuleId = value
+  private[proofgate] def unsafe(value: String): RuleId = value
 
   extension (ruleId: RuleId) def value: String = ruleId
 
 object Revision:
-  def unsafe(value: String): Revision = value
+  private[proofgate] def unsafe(value: String): Revision = value
   extension (revision: Revision) def value: String = revision
 
 object PipelineId:
@@ -35,7 +35,7 @@ object PipelineId:
     val trimmed = value.trim
     Either.cond(trimmed.nonEmpty, trimmed, "PipelineId cannot be empty")
 
-  def unsafe(value: String): PipelineId = value
+  private[proofgate] def unsafe(value: String): PipelineId = value
 
   extension (pipelineId: PipelineId) def value: String = pipelineId
 
@@ -44,7 +44,7 @@ object ContractId:
     val trimmed = value.trim
     Either.cond(trimmed.nonEmpty, trimmed, "ContractId cannot be empty")
 
-  def unsafe(value: String): ContractId = value
+  private[proofgate] def unsafe(value: String): ContractId = value
 
   extension (contractId: ContractId) def value: String = contractId
 

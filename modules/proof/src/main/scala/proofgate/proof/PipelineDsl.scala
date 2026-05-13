@@ -4,7 +4,18 @@ import proofgate.model.*
 import scala.quoted.*
 
 enum SchemaPolicy:
-  case Exact, Backward, Forward
+  case Exact, ExactUnorderedCI, ExactOrdered, ExactOrderedCI, ExactByPosition, Backward, Forward,
+    Full
+
+object SchemaPolicy:
+  type Exact = SchemaPolicy.Exact.type
+  type ExactUnorderedCI = SchemaPolicy.ExactUnorderedCI.type
+  type ExactOrdered = SchemaPolicy.ExactOrdered.type
+  type ExactOrderedCI = SchemaPolicy.ExactOrderedCI.type
+  type ExactByPosition = SchemaPolicy.ExactByPosition.type
+  type Backward = SchemaPolicy.Backward.type
+  type Forward = SchemaPolicy.Forward.type
+  type Full = SchemaPolicy.Full.type
 
 trait Source[A]
 
@@ -103,18 +114,51 @@ private object SchemaConformsMacro:
   ): Expr[SchemaConforms[Out, Contract, P]] =
     import q.reflect.*
 
-    if !(TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Exact.type]) then
+    val isExact =
+      TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Exact.type] ||
+        TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.ExactUnorderedCI.type]
+    val isExactOrdered = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.ExactOrdered.type]
+    val isExactOrderedCI = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.ExactOrderedCI.type]
+    val isExactByPosition = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.ExactByPosition.type]
+    val isBackward = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Backward.type]
+    val isForward = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Forward.type]
+    val isFull = TypeRepr.of[P] =:= TypeRepr.of[SchemaPolicy.Full.type]
+
+    if !(isExact || isExactOrdered || isExactOrderedCI || isExactByPosition || isBackward || isForward || isFull)
+    then
       report.errorAndAbort(
-        s"SchemaConforms currently supports only SchemaPolicy.Exact. Requested: ${Type.show[P]}"
+        s"Unsupported SchemaPolicy requested: ${Type.show[P]}"
       )
 
     val outShape = shapeOf(using q)(TypeRepr.of[Out])
     val contractShape = shapeOf(using q)(TypeRepr.of[Contract])
-    val diffs = compare("", outShape, contractShape)
+    val caseInsensitive = isExact || isExactOrderedCI
+    val rawDiffs =
+      if isExactByPosition then compareByPosition("", outShape, contractShape)
+      else if isExactOrdered || isExactOrderedCI then
+        compareOrdered("", outShape, contractShape, caseInsensitive)
+      else compareByName("", outShape, contractShape, caseInsensitive)
+
+    // Backward: Out may add fields beyond Contract. Missing required fields and type drift fail.
+    // Forward: Out may drop fields Contract declares. Extras and type drift fail.
+    val diffs =
+      if isFull then Nil
+      else if isBackward then
+        rawDiffs.filter {
+          case Diff.Extra(_)          => false
+          case Diff.Missing(_, field) => !(field.optional || field.hasDefault)
+          case _                      => true
+        }
+      else if isForward then
+        rawDiffs.filter {
+          case Diff.Missing(_, _) => false
+          case _                  => true
+        }
+      else rawDiffs
 
     if diffs.nonEmpty then
-      val missing = diffs.collect { case Diff.Missing(path, expected) =>
-        s"$path : ${render(expected)}"
+      val missing = diffs.collect { case Diff.Missing(path, field) =>
+        s"$path : ${renderField(field)}"
       }
       val extra = diffs.collect { case Diff.Extra(path) => path }
       val mismatches = diffs.collect { case Diff.Mismatch(path, expected, found) =>
@@ -139,10 +183,10 @@ private object SchemaConformsMacro:
     case MapShape(key: Shape.Primitive, value: Shape)
     case Struct(fields: List[Field])
 
-  private final case class Field(name: String, shape: Shape)
+  private final case class Field(name: String, shape: Shape, hasDefault: Boolean, optional: Boolean)
 
   private enum Diff:
-    case Missing(path: String, expected: Shape)
+    case Missing(path: String, field: Field)
     case Extra(path: String)
     case Mismatch(path: String, expected: Shape, found: Shape)
 
@@ -226,7 +270,17 @@ private object SchemaConformsMacro:
         if isCaseClass(tpe) then
           val params = tpe.typeSymbol.primaryConstructor.paramSymss.flatten
           Shape.Struct(
-            params.map(param => Field(param.name, shapeOf(using q)(tpe.memberType(param))))
+            params.map { param =>
+              val fieldType = tpe.memberType(param)
+              val maybeOption = optionArg(fieldType)
+              val fieldShape = shapeOf(using q)(maybeOption.getOrElse(fieldType))
+              Field(
+                name = param.name,
+                shape = fieldShape,
+                hasDefault = param.flags.is(Flags.HasDefault),
+                optional = maybeOption.isDefined
+              )
+            }
           )
         else if isSupportedPrimitive(tpe) then Shape.Primitive(tpe.show)
         else
@@ -235,46 +289,172 @@ private object SchemaConformsMacro:
           )
       }
 
-  private def compare(path: String, found: Shape, expected: Shape): List[Diff] =
+  private def compareByName(
+      path: String,
+      found: Shape,
+      expected: Shape,
+      caseInsensitive: Boolean
+  ): List[Diff] =
     (found, expected) match
       case (Shape.Primitive(left), Shape.Primitive(right)) if left == right =>
         Nil
 
       case (Shape.Optional(left), Shape.Optional(right)) =>
-        compare(path, left, right)
+        compareByName(path, left, right, caseInsensitive)
 
       case (Shape.Sequence(left), Shape.Sequence(right)) =>
-        compare(s"$path[]", left, right)
+        compareByName(s"$path[]", left, right, caseInsensitive)
+
+      case (Shape.MapShape(leftKey, leftValue), Shape.MapShape(rightKey, rightValue)) =>
+        val keyDiffs =
+          if sameName(leftKey.name, rightKey.name, caseInsensitive) then Nil
+          else List(Diff.Mismatch(s"$path<key>", rightKey, leftKey))
+
+        keyDiffs ++ compareByName(s"$path<value>", leftValue, rightValue, caseInsensitive)
+
+      case (Shape.Struct(foundFields), Shape.Struct(expectedFields)) =>
+        val duplicateDiffs =
+          duplicateNameDiffs(path, foundFields, "Out", caseInsensitive) ++
+            duplicateNameDiffs(path, expectedFields, "Contract", caseInsensitive)
+
+        val foundByName =
+          foundFields.map(field => normalize(field.name, caseInsensitive) -> field).toMap
+        val expectedByName =
+          expectedFields.map(field => normalize(field.name, caseInsensitive) -> field).toMap
+
+        val missing =
+          expectedFields.collect {
+            case field if !foundByName.contains(normalize(field.name, caseInsensitive)) =>
+              Diff.Missing(pathOf(path, field.name), field)
+          }
+
+        val extra =
+          foundFields.collect {
+            case field if !expectedByName.contains(normalize(field.name, caseInsensitive)) =>
+              Diff.Extra(pathOf(path, field.name))
+          }
+
+        val nested =
+          expectedFields.flatMap { expectedField =>
+            foundByName.get(normalize(expectedField.name, caseInsensitive)).toList.flatMap {
+              foundField =>
+                compareByName(
+                  pathOf(path, expectedField.name),
+                  foundField.shape,
+                  expectedField.shape,
+                  caseInsensitive
+                )
+            }
+          }
+
+        duplicateDiffs ++ missing ++ extra ++ nested
+
+      case _ =>
+        List(Diff.Mismatch(path, expected, found))
+
+  private def compareOrdered(
+      path: String,
+      found: Shape,
+      expected: Shape,
+      caseInsensitive: Boolean
+  ): List[Diff] =
+    (found, expected) match
+      case (Shape.Primitive(left), Shape.Primitive(right)) if left == right =>
+        Nil
+
+      case (Shape.Optional(left), Shape.Optional(right)) =>
+        compareOrdered(path, left, right, caseInsensitive)
+
+      case (Shape.Sequence(left), Shape.Sequence(right)) =>
+        compareOrdered(s"$path[]", left, right, caseInsensitive)
+
+      case (Shape.MapShape(leftKey, leftValue), Shape.MapShape(rightKey, rightValue)) =>
+        val keyDiffs =
+          if sameName(leftKey.name, rightKey.name, caseInsensitive) then Nil
+          else List(Diff.Mismatch(s"$path<key>", rightKey, leftKey))
+
+        keyDiffs ++ compareOrdered(s"$path<value>", leftValue, rightValue, caseInsensitive)
+
+      case (Shape.Struct(foundFields), Shape.Struct(expectedFields)) =>
+        val min = math.min(foundFields.length, expectedFields.length)
+
+        val pairDiffs =
+          (0 until min).toList.flatMap { index =>
+            val foundField = foundFields(index)
+            val expectedField = expectedFields(index)
+            val nameDiff =
+              if sameName(foundField.name, expectedField.name, caseInsensitive) then Nil
+              else
+                List(
+                  Diff.Mismatch(
+                    s"${pathOf(path, expectedField.name)}.@$index(name)",
+                    Shape.Primitive(expectedField.name),
+                    Shape.Primitive(foundField.name)
+                  )
+                )
+
+            nameDiff ++ compareOrdered(
+              pathOf(path, expectedField.name),
+              foundField.shape,
+              expectedField.shape,
+              caseInsensitive
+            )
+          }
+
+        val missing =
+          if expectedFields.length > foundFields.length then
+            expectedFields.drop(min).map(field => Diff.Missing(pathOf(path, field.name), field))
+          else Nil
+
+        val extra =
+          if foundFields.length > expectedFields.length then
+            foundFields.drop(min).map(field => Diff.Extra(pathOf(path, field.name)))
+          else Nil
+
+        missing ++ extra ++ pairDiffs
+
+      case _ =>
+        List(Diff.Mismatch(path, expected, found))
+
+  private def compareByPosition(path: String, found: Shape, expected: Shape): List[Diff] =
+    (found, expected) match
+      case (Shape.Primitive(left), Shape.Primitive(right)) if left == right =>
+        Nil
+
+      case (Shape.Optional(left), Shape.Optional(right)) =>
+        compareByPosition(path, left, right)
+
+      case (Shape.Sequence(left), Shape.Sequence(right)) =>
+        compareByPosition(s"$path[]", left, right)
 
       case (Shape.MapShape(leftKey, leftValue), Shape.MapShape(rightKey, rightValue)) =>
         val keyDiffs =
           if leftKey.name == rightKey.name then Nil
           else List(Diff.Mismatch(s"$path<key>", rightKey, leftKey))
 
-        keyDiffs ++ compare(s"$path<value>", leftValue, rightValue)
+        keyDiffs ++ compareByPosition(s"$path<value>", leftValue, rightValue)
 
       case (Shape.Struct(foundFields), Shape.Struct(expectedFields)) =>
-        val foundByName = foundFields.map(field => field.name -> field).toMap
-        val expectedByName = expectedFields.map(field => field.name -> field).toMap
-
-        val missing =
-          expectedFields.collect {
-            case field if !foundByName.contains(field.name) =>
-              Diff.Missing(pathOf(path, field.name), field.shape)
-          }
-
-        val extra =
-          foundFields.collect {
-            case field if !expectedByName.contains(field.name) =>
-              Diff.Extra(pathOf(path, field.name))
-          }
+        val min = math.min(foundFields.length, expectedFields.length)
 
         val nested =
-          expectedFields.flatMap { expectedField =>
-            foundByName.get(expectedField.name).toList.flatMap { foundField =>
-              compare(pathOf(path, expectedField.name), foundField.shape, expectedField.shape)
-            }
+          (0 until min).toList.flatMap { index =>
+            compareByPosition(
+              s"$path.@$index",
+              foundFields(index).shape,
+              expectedFields(index).shape
+            )
           }
+
+        val missing =
+          if expectedFields.length > foundFields.length then
+            expectedFields.drop(min).map(field => Diff.Missing(s"$path.@$min", field))
+          else Nil
+
+        val extra =
+          if foundFields.length > expectedFields.length then
+            foundFields.drop(min).map(field => Diff.Extra(s"$path.@$min"))
+          else Nil
 
         missing ++ extra ++ nested
 
@@ -283,6 +463,37 @@ private object SchemaConformsMacro:
 
   private def pathOf(base: String, segment: String): String =
     if base.isEmpty then segment else s"$base.$segment"
+
+  private def normalize(name: String, caseInsensitive: Boolean): String =
+    if caseInsensitive then name.toLowerCase else name
+
+  private def sameName(left: String, right: String, caseInsensitive: Boolean): Boolean =
+    if caseInsensitive then left.equalsIgnoreCase(right) else left == right
+
+  private def duplicateNameDiffs(
+      path: String,
+      fields: List[Field],
+      side: String,
+      caseInsensitive: Boolean
+  ): List[Diff] =
+    fields
+      .groupBy(field => normalize(field.name, caseInsensitive))
+      .values
+      .collect {
+        case duplicates if duplicates.length > 1 =>
+          val names = duplicates.map(_.name).sorted.mkString("[", ", ", "]")
+          Diff.Mismatch(
+            pathOf(path, "<fields>"),
+            Shape.Primitive(s"unique $side field names"),
+            Shape.Primitive(s"duplicate $side field names $names")
+          )
+      }
+      .toList
+
+  private def renderField(field: Field): String =
+    val optional = if field.optional then " (optional)" else ""
+    val default = if field.hasDefault then " (default)" else ""
+    s"${render(field.shape)}$optional$default"
 
   private def render(shape: Shape): String =
     shape match

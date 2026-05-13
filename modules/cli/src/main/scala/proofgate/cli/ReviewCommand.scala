@@ -208,6 +208,7 @@ object ReviewCommand:
       |  --out <path>           Write Markdown report to a file. Prints to stdout when omitted.
       |  --format <format>      Output format: markdown or json. Inferred from .json output paths.
       |  --finding <value>      stage|severity|ruleId|message[|path[|hint]]
+      |                         Pipe-delimited. Fields cannot contain the | character.
       |  --risk <value>         category=level, for example api-breaking-change=High
       |  --question <text>      Optional human-review question.
       |

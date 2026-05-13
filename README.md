@@ -47,11 +47,13 @@ This repository currently targets the stable stack:
 ## Module layout
 
 - `modules/model`: core ADTs, typed errors, report model
-- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof
-- `modules/runtime-spark`: runtime shape derivation and sink-boundary pin checks
+- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof policies
+- `modules/runtime-spark`: runtime shape derivation, sink-boundary pin checks, Spark schema adapter
 - `modules/cli`: CLI entry point
 - `modules/examples`: tiny usage examples
 - `modules/fixtures-compile-fail`: reference snippets for compile-fail demos
+- `modules/fixtures-policy-fail`: deliberate violations that Scalafix must reject;
+  not aggregated by the root project, run on demand via `scripts/check-policy-fixtures.sh`
 
 ## Commands
 
@@ -83,9 +85,63 @@ The expected-failure fixtures prove that these patterns are blocked:
 - direct `ConfigFactory`
 - raw `try` / `catch`
 - raw `throw`
+- raw `require`
+
+## Schema policies
+
+`SchemaConforms[Out, Contract, Policy]` is the compile-time evidence the proof layer requires.
+
+- `SchemaPolicy.Exact`: unordered by name, case-insensitive, same field set, types, and nesting.
+  Field-level nullability is ignored; nested optionality inside arrays and maps is still checked.
+- `SchemaPolicy.ExactUnorderedCI`: explicit alias for unordered case-insensitive exact matching.
+- `SchemaPolicy.ExactOrdered`: ordered by field name, case-sensitive.
+- `SchemaPolicy.ExactOrderedCI`: ordered by field name, case-insensitive.
+- `SchemaPolicy.ExactByPosition`: ordered by position only; field names are ignored.
+- `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Required `Contract`
+  fields must still exist in `Out` with the declared type. Missing optional `Contract`
+  fields and missing fields with defaults are accepted. Old consumers reading `Contract`
+  keep working when the producer adds fields.
+- `SchemaPolicy.Forward`: `Out` may drop fields that `Contract` declares. Extra fields
+  in `Out` and type drift still fail. Old producers stay compatible with new consumers
+  that have widened the contract.
+- `SchemaPolicy.Full`: escape hatch for demo and migration paths; compile-time and runtime
+  structural checks accept the shape.
+
+These names intentionally mirror `compile-time-data-contracts`. ProofGate keeps the same policy
+vocabulary so the talk can show a clean migration from the earlier proof asset into the review
+conveyor.
+
+## Spark bridge
+
+`SparkSchemaAdapter` converts real Spark `StructType` values into a `RuntimeShape`.
+The adapter preserves nested struct nullability, array `containsNull`, map `valueContainsNull`,
+and `ctdc.hasDefault` metadata:
+
+```scala
+val shape = SparkSchemaAdapter.fromStructType(dataset.schema)
+```
+
+For thin integration boundaries, callers can still pass a small DTO:
+
+```scala
+val info = structType.fields.map(f =>
+  SparkFieldInfo(f.name, f.dataType.simpleString, f.nullable)
+).toVector
+
+val shape = SparkSchemaAdapter.fromSparkFields(info)
+```
+
+The DTO path understands Spark primitive types, `array<T>`, `map<K,V>`, and nested `struct<...>`
+expressions, but Spark `simpleString` does not carry nested struct nullability. Use
+`fromStructType` when runtime parity matters.
+
+See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, including the
+`Dataset[A] => RuntimeShape` helper and a sink-time validate call.
 
 ## Status
 
 This is an early POC scaffold.
-The current code proves the build, module wiring, typed-error model, typestate assembly, the first exact structural
-contract proof, an in-memory runtime shape pin, and a CI-friendly Markdown review report path.
+The current code proves the build, module wiring, typed-error model, typestate assembly,
+the full compile-time policy vocabulary from `compile-time-data-contracts`, an in-memory
+runtime shape pin with matching policy entry points, a Spark schema bridge, and a CI-friendly
+Markdown and JSON review report path.

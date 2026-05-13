@@ -1,5 +1,6 @@
 val scala3Version = "3.8.3"
 val munitVersion = "1.3.0"
+val sparkVersion = "3.5.1"
 
 ThisBuild / organization := "com.vitthalmirji"
 ThisBuild / version := "0.1.0-SNAPSHOT"
@@ -48,7 +49,10 @@ lazy val proof = module("proof")
 lazy val runtimeSpark = module("runtimeSpark", "runtime-spark")
   .settings(
     name := "proof-gate-runtime-spark",
-    moduleName := "proof-gate-runtime-spark"
+    moduleName := "proof-gate-runtime-spark",
+    libraryDependencies += (
+      "org.apache.spark" %% "spark-sql" % sparkVersion % Provided
+    ).cross(CrossVersion.for3Use2_13)
   )
   .dependsOn(model, proof)
 
@@ -80,6 +84,10 @@ lazy val fixturesPolicyFail = module("fixturesPolicyFail", "fixtures-policy-fail
   )
   .dependsOn(model)
 
+// fixturesPolicyFail is intentionally not aggregated. Its sources hold
+// patterns that Scalafix must reject. scripts/check-policy-fixtures.sh runs
+// it on demand and inverts the exit code so the conveyor proves the rules
+// are still wired up.
 lazy val root = project
   .in(file("."))
   .aggregate(model, proof, runtimeSpark, cli, examples, fixturesCompileFail)

@@ -11,7 +11,12 @@ enum RuntimeType:
   case MapType(key: RuntimeType, value: RuntimeType)
   case Struct(fields: Vector[RuntimeField])
 
-final case class RuntimeField(name: String, dataType: RuntimeType, nullable: Boolean)
+final case class RuntimeField(
+    name: String,
+    dataType: RuntimeType,
+    nullable: Boolean,
+    hasDefault: Boolean = false
+)
 final case class RuntimeShape(fields: Vector[RuntimeField])
 
 trait RuntimeShapeEncoder[A]:
@@ -32,7 +37,39 @@ object RuntimePin:
 
   given exact: RuntimePin[SchemaPolicy.Exact.type] with
     def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
-      RuntimeShapeDiff.compare(actual, expected).map(toFinding)
+      RuntimeShapeDiff.compare(actual, expected, RuntimeShapePolicy.Exact).map(toFinding)
+
+  given exactUnorderedCI: RuntimePin[SchemaPolicy.ExactUnorderedCI.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      RuntimeShapeDiff.compare(actual, expected, RuntimeShapePolicy.Exact).map(toFinding)
+
+  given exactOrdered: RuntimePin[SchemaPolicy.ExactOrdered.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      RuntimeShapeDiff
+        .compare(actual, expected, RuntimeShapePolicy.Ordered(caseInsensitive = false))
+        .map(toFinding)
+
+  given exactOrderedCI: RuntimePin[SchemaPolicy.ExactOrderedCI.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      RuntimeShapeDiff
+        .compare(actual, expected, RuntimeShapePolicy.Ordered(caseInsensitive = true))
+        .map(toFinding)
+
+  given exactByPosition: RuntimePin[SchemaPolicy.ExactByPosition.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      RuntimeShapeDiff.compare(actual, expected, RuntimeShapePolicy.ByPosition).map(toFinding)
+
+  given backward: RuntimePin[SchemaPolicy.Backward.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      RuntimeShapeDiff.compare(actual, expected, RuntimeShapePolicy.Backward).map(toFinding)
+
+  given forward: RuntimePin[SchemaPolicy.Forward.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      RuntimeShapeDiff.compare(actual, expected, RuntimeShapePolicy.Forward).map(toFinding)
+
+  given full: RuntimePin[SchemaPolicy.Full.type] with
+    def validate(actual: RuntimeShape, expected: RuntimeShape): Vector[Finding] =
+      Vector.empty
 
   private def toFinding(diff: RuntimeShapeDiff): Finding =
     Finding(
@@ -47,87 +84,318 @@ object RuntimePin:
 
 final case class RuntimeShapeDiff(path: String, expected: String, found: String)
 
+private enum RuntimeShapePolicy:
+  case Exact
+  case Ordered(caseInsensitive: Boolean)
+  case ByPosition
+  case Backward
+  case Forward
+
 object RuntimeShapeDiff:
   def compare(actual: RuntimeShape, expected: RuntimeShape): Vector[RuntimeShapeDiff] =
-    compareFields("", actual.fields, expected.fields)
+    compare(actual, expected, RuntimeShapePolicy.Exact)
 
-  private def compareFields(
+  private[runtime] def compare(
+      actual: RuntimeShape,
+      expected: RuntimeShape,
+      policy: RuntimeShapePolicy
+  ): Vector[RuntimeShapeDiff] =
+    policy match
+      case RuntimeShapePolicy.Exact =>
+        compareFieldsByName("", actual.fields, expected.fields, caseInsensitive = true)
+      case RuntimeShapePolicy.Ordered(caseInsensitive) =>
+        compareFieldsOrdered("", actual.fields, expected.fields, caseInsensitive)
+      case RuntimeShapePolicy.ByPosition =>
+        compareFieldsByPosition("", actual.fields, expected.fields)
+      case RuntimeShapePolicy.Backward =>
+        compareFieldsBackward("", actual.fields, expected.fields)
+      case RuntimeShapePolicy.Forward =>
+        compareFieldsByName("", actual.fields, expected.fields, caseInsensitive = false).filter {
+          case RuntimeShapeDiff(_, _, "<missing>") => false
+          case _                                   => true
+        }
+
+  private def compareFieldsByName(
       basePath: String,
       actualFields: Vector[RuntimeField],
-      expectedFields: Vector[RuntimeField]
+      expectedFields: Vector[RuntimeField],
+      caseInsensitive: Boolean
   ): Vector[RuntimeShapeDiff] =
-    val actualByName = actualFields.map(field => field.name -> field).toMap
-    val expectedByName = expectedFields.map(field => field.name -> field).toMap
+    val duplicateDiffs =
+      duplicateNameDiffs(basePath, actualFields, "actual", caseInsensitive) ++
+        duplicateNameDiffs(basePath, expectedFields, "expected", caseInsensitive)
+
+    val actualByName =
+      actualFields.map(field => normalize(field.name, caseInsensitive) -> field).toMap
+    val expectedByName =
+      expectedFields.map(field => normalize(field.name, caseInsensitive) -> field).toMap
 
     val missing =
       expectedFields.collect {
-        case field if !actualByName.contains(field.name) =>
+        case field if !actualByName.contains(normalize(field.name, caseInsensitive)) =>
           RuntimeShapeDiff(pathOf(basePath, field.name), renderField(field), "<missing>")
       }
 
     val extra =
       actualFields.collect {
-        case field if !expectedByName.contains(field.name) =>
+        case field if !expectedByName.contains(normalize(field.name, caseInsensitive)) =>
           RuntimeShapeDiff(pathOf(basePath, field.name), "<absent>", renderField(field))
       }
 
     val nested =
       expectedFields.flatMap { expectedField =>
-        actualByName.get(expectedField.name).toVector.flatMap { actualField =>
-          compareField(pathOf(basePath, expectedField.name), actualField, expectedField)
+        actualByName.get(normalize(expectedField.name, caseInsensitive)).toVector.flatMap {
+          actualField =>
+            compareFieldByName(
+              pathOf(basePath, expectedField.name),
+              actualField,
+              expectedField,
+              caseInsensitive
+            )
         }
       }
 
+    duplicateDiffs ++ missing ++ extra ++ nested
+
+  private def compareFieldsBackward(
+      basePath: String,
+      actualFields: Vector[RuntimeField],
+      expectedFields: Vector[RuntimeField]
+  ): Vector[RuntimeShapeDiff] =
+    val duplicateDiffs =
+      duplicateNameDiffs(basePath, actualFields, "actual", caseInsensitive = false) ++
+        duplicateNameDiffs(basePath, expectedFields, "expected", caseInsensitive = false)
+
+    val actualByName = actualFields.map(field => field.name -> field).toMap
+
+    val missing =
+      expectedFields.collect {
+        case field if !actualByName.contains(field.name) && !(field.nullable || field.hasDefault) =>
+          RuntimeShapeDiff(pathOf(basePath, field.name), renderField(field), "<missing>")
+      }
+
+    val nested =
+      expectedFields.flatMap { expectedField =>
+        actualByName.get(expectedField.name).toVector.flatMap { actualField =>
+          compareFieldBackward(pathOf(basePath, expectedField.name), actualField, expectedField)
+        }
+      }
+
+    duplicateDiffs ++ missing ++ nested
+
+  private def compareFieldsOrdered(
+      basePath: String,
+      actualFields: Vector[RuntimeField],
+      expectedFields: Vector[RuntimeField],
+      caseInsensitive: Boolean
+  ): Vector[RuntimeShapeDiff] =
+    val min = math.min(actualFields.length, expectedFields.length)
+
+    val pairDiffs =
+      (0 until min).toVector.flatMap { index =>
+        val actual = actualFields(index)
+        val expected = expectedFields(index)
+        val nameDiff =
+          Option
+            .when(!sameName(actual.name, expected.name, caseInsensitive)) {
+              RuntimeShapeDiff(
+                s"${pathOf(basePath, expected.name)}.@$index(name)",
+                expected.name,
+                actual.name
+              )
+            }
+            .toVector
+
+        nameDiff ++ compareFieldOrdered(
+          pathOf(basePath, expected.name),
+          actual,
+          expected,
+          caseInsensitive
+        )
+      }
+
+    val missing =
+      if expectedFields.length > actualFields.length then
+        expectedFields
+          .drop(min)
+          .map(field =>
+            RuntimeShapeDiff(pathOf(basePath, field.name), renderField(field), "<missing>")
+          )
+      else Vector.empty
+
+    val extra =
+      if actualFields.length > expectedFields.length then
+        actualFields
+          .drop(min)
+          .map(field =>
+            RuntimeShapeDiff(pathOf(basePath, field.name), "<absent>", renderField(field))
+          )
+      else Vector.empty
+
+    missing ++ extra ++ pairDiffs
+
+  private def compareFieldsByPosition(
+      basePath: String,
+      actualFields: Vector[RuntimeField],
+      expectedFields: Vector[RuntimeField]
+  ): Vector[RuntimeShapeDiff] =
+    val min = math.min(actualFields.length, expectedFields.length)
+
+    val nested =
+      (0 until min).toVector.flatMap { index =>
+        compareFieldByPosition(s"$basePath.@$index", actualFields(index), expectedFields(index))
+      }
+
+    val missing =
+      if expectedFields.length > actualFields.length then
+        expectedFields
+          .drop(min)
+          .map(field => RuntimeShapeDiff(s"$basePath.@$min", renderField(field), "<missing>"))
+      else Vector.empty
+
+    val extra =
+      if actualFields.length > expectedFields.length then
+        actualFields
+          .drop(min)
+          .map(field => RuntimeShapeDiff(s"$basePath.@$min", "<absent>", renderField(field)))
+      else Vector.empty
+
     missing ++ extra ++ nested
 
-  private def compareField(
+  private def compareFieldByName(
+      path: String,
+      actual: RuntimeField,
+      expected: RuntimeField,
+      caseInsensitive: Boolean
+  ): Vector[RuntimeShapeDiff] =
+    compareTypeByName(path, actual.dataType, expected.dataType, caseInsensitive)
+
+  private def compareFieldOrdered(
+      path: String,
+      actual: RuntimeField,
+      expected: RuntimeField,
+      caseInsensitive: Boolean
+  ): Vector[RuntimeShapeDiff] =
+    compareTypeOrdered(path, actual.dataType, expected.dataType, caseInsensitive)
+
+  private def compareFieldByPosition(
       path: String,
       actual: RuntimeField,
       expected: RuntimeField
   ): Vector[RuntimeShapeDiff] =
-    val nullability =
-      Option
-        .when(actual.nullable != expected.nullable) {
-          RuntimeShapeDiff(path, renderField(expected), renderField(actual))
-        }
-        .toVector
+    compareTypeByPosition(path, actual.dataType, expected.dataType)
 
-    nullability ++ compareType(path, actual.dataType, expected.dataType)
+  private def compareFieldBackward(
+      path: String,
+      actual: RuntimeField,
+      expected: RuntimeField
+  ): Vector[RuntimeShapeDiff] =
+    compareTypeBackward(path, actual.dataType, expected.dataType)
 
-  private def compareType(
+  private def compareTypeByName(
       path: String,
       actual: RuntimeType,
-      expected: RuntimeType
+      expected: RuntimeType,
+      caseInsensitive: Boolean
   ): Vector[RuntimeShapeDiff] =
     (actual, expected) match
       case (RuntimeType.Primitive(left), RuntimeType.Primitive(right)) if left == right =>
         Vector.empty
 
       case (RuntimeType.Optional(left), RuntimeType.Optional(right)) =>
-        compareType(path, left, right)
+        compareTypeByName(path, left, right, caseInsensitive)
 
       case (RuntimeType.Sequence(left), RuntimeType.Sequence(right)) =>
-        compareType(s"$path[]", left, right)
+        compareTypeByName(s"$path[]", left, right, caseInsensitive)
 
+      case (RuntimeType.MapType(leftKey, leftValue), RuntimeType.MapType(rightKey, rightValue)) =>
+        val keyDiffs =
+          if sameName(renderType(leftKey), renderType(rightKey), caseInsensitive) then Vector.empty
+          else Vector(RuntimeShapeDiff(s"$path<key>", renderType(rightKey), renderType(leftKey)))
+
+        keyDiffs ++ compareTypeByName(s"$path<value>", leftValue, rightValue, caseInsensitive)
+
+      case (RuntimeType.Struct(actualFields), RuntimeType.Struct(expectedFields)) =>
+        compareFieldsByName(path, actualFields, expectedFields, caseInsensitive)
+
+      case _ =>
+        Vector(RuntimeShapeDiff(path, renderType(expected), renderType(actual)))
+
+  private def compareTypeOrdered(
+      path: String,
+      actual: RuntimeType,
+      expected: RuntimeType,
+      caseInsensitive: Boolean
+  ): Vector[RuntimeShapeDiff] =
+    (actual, expected) match
+      case (RuntimeType.Struct(actualFields), RuntimeType.Struct(expectedFields)) =>
+        compareFieldsOrdered(path, actualFields, expectedFields, caseInsensitive)
+      case _ =>
+        compareTypeByName(path, actual, expected, caseInsensitive)
+
+  private def compareTypeByPosition(
+      path: String,
+      actual: RuntimeType,
+      expected: RuntimeType
+  ): Vector[RuntimeShapeDiff] =
+    (actual, expected) match
+      case (RuntimeType.Struct(actualFields), RuntimeType.Struct(expectedFields)) =>
+        compareFieldsByPosition(path, actualFields, expectedFields)
+      case (RuntimeType.Sequence(left), RuntimeType.Sequence(right)) =>
+        compareTypeByPosition(s"$path[]", left, right)
       case (RuntimeType.MapType(leftKey, leftValue), RuntimeType.MapType(rightKey, rightValue)) =>
         val keyDiffs =
           if renderType(leftKey) == renderType(rightKey) then Vector.empty
           else Vector(RuntimeShapeDiff(s"$path<key>", renderType(rightKey), renderType(leftKey)))
 
-        keyDiffs ++ compareType(s"$path<value>", leftValue, rightValue)
-
-      case (RuntimeType.Struct(actualFields), RuntimeType.Struct(expectedFields)) =>
-        compareFields(path, actualFields, expectedFields)
-
+        keyDiffs ++ compareTypeByPosition(s"$path<value>", leftValue, rightValue)
       case _ =>
-        Vector(RuntimeShapeDiff(path, renderType(expected), renderType(actual)))
+        compareTypeByName(path, actual, expected, caseInsensitive = false)
+
+  private def compareTypeBackward(
+      path: String,
+      actual: RuntimeType,
+      expected: RuntimeType
+  ): Vector[RuntimeShapeDiff] =
+    (actual, expected) match
+      case (RuntimeType.Struct(actualFields), RuntimeType.Struct(expectedFields)) =>
+        compareFieldsBackward(path, actualFields, expectedFields)
+      case _ =>
+        compareTypeByName(path, actual, expected, caseInsensitive = false)
 
   private def pathOf(base: String, segment: String): String =
     if base.isEmpty then segment else s"$base.$segment"
 
+  private def normalize(name: String, caseInsensitive: Boolean): String =
+    if caseInsensitive then name.toLowerCase else name
+
+  private def sameName(left: String, right: String, caseInsensitive: Boolean): Boolean =
+    if caseInsensitive then left.equalsIgnoreCase(right) else left == right
+
+  private def duplicateNameDiffs(
+      basePath: String,
+      fields: Vector[RuntimeField],
+      side: String,
+      caseInsensitive: Boolean
+  ): Vector[RuntimeShapeDiff] =
+    fields
+      .groupBy(field => normalize(field.name, caseInsensitive))
+      .values
+      .collect {
+        case duplicates if duplicates.length > 1 =>
+          val names = duplicates.map(_.name).sorted.mkString("[", ", ", "]")
+          RuntimeShapeDiff(
+            pathOf(basePath, "<fields>"),
+            s"unique $side field names",
+            s"duplicate $side field names $names"
+          )
+      }
+      .toVector
+
   private def renderField(field: RuntimeField): String =
     val nullable = if field.nullable then " nullable" else ""
-    s"${renderType(field.dataType)}$nullable"
+    val default = if field.hasDefault then " default" else ""
+    s"${renderType(field.dataType)}$nullable$default"
 
   private def renderType(dataType: RuntimeType): String =
     dataType match

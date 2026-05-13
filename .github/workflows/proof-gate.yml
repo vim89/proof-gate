@@ -30,6 +30,9 @@ jobs:
       - name: Run review conveyor
         run: sbt reviewConveyor
 
+      - name: Check policy-fail fixtures
+        run: scripts/check-policy-fixtures.sh
+
       - name: Generate ProofGate report
         run: |
           sbt "cli / runMain proofgate.cli.Main review \

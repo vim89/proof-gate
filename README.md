@@ -60,6 +60,7 @@ sbt test
 sbt reviewGates
 sbt reviewPolicy
 sbt reviewConveyor
+scripts/check-policy-fixtures.sh
 sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proof-gate-review.md"
 sbt "cli / runMain proofgate.cli.Main review --revision abc123 --out target/proof-gate-review.json"
 ```
@@ -71,6 +72,17 @@ Example rejecting review packet:
 ```bash
 sbt "cli / runMain proofgate.cli.Main review --revision abc123 --finding proof|blocker|proof.schema-exact|Missing_customer_id|pipelines/orders.scala|Add_the_field"
 ```
+
+## Policy fixtures
+
+`reviewPolicy` uses Scalafix `DisableSyntax` rules to reject selected forbidden patterns in core code.
+The expected-failure fixtures prove that these patterns are blocked:
+
+- direct `sys.env`
+- direct `System.getenv`
+- direct `ConfigFactory`
+- raw `try` / `catch`
+- raw `throw`
 
 ## Status
 

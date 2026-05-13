@@ -47,7 +47,7 @@ This repository currently targets the stable stack:
 
 - `modules/model`: core ADTs, typed errors, report model
 - `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof
-- `modules/runtime-spark`: runtime pin abstractions and Spark-facing boundary
+- `modules/runtime-spark`: runtime shape derivation and sink-boundary pin checks
 - `modules/cli`: CLI entry point
 - `modules/examples`: tiny usage examples
 - `modules/fixtures-compile-fail`: reference snippets for compile-fail demos
@@ -64,5 +64,5 @@ sbt reviewConveyor
 ## Status
 
 This is an early POC scaffold.
-The current code proves the build, module wiring, typed-error model, typestate assembly, and the first exact structural
-contract proof.
+The current code proves the build, module wiring, typed-error model, typestate assembly, the first exact structural
+contract proof, and an in-memory runtime shape pin.

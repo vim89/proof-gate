@@ -26,6 +26,52 @@ final class PipelineDslSuite extends FunSuite:
     val evidence = SchemaConforms.conforms[OrderOut, OrderContract, SchemaPolicy.Exact.type]
     assert(evidence != null)
 
+  test("SchemaConforms accepts Exact when names only differ by case"):
+    final case class Out(id: Long, Email: String, amount: BigDecimal)
+
+    val evidence = SchemaConforms.conforms[Out, OrderContract, SchemaPolicy.Exact.type]
+    assert(evidence != null)
+
+  test("SchemaConforms accepts ExactUnorderedCI when order and case differ"):
+    final case class Out(AMOUNT: BigDecimal, Email: String, id: Long)
+
+    val evidence =
+      SchemaConforms.conforms[Out, OrderContract, SchemaPolicy.ExactUnorderedCI.type]
+    assert(evidence != null)
+
+  test("SchemaConforms rejects ExactOrdered when fields are reordered"):
+    val errors = compileErrors("""
+      import proofgate.proof.*
+
+      final case class Out(email: String, id: Long, amount: BigDecimal)
+      final case class Contract(id: Long, email: String, amount: BigDecimal)
+
+      val evidence = summon[SchemaConforms[Out, Contract, SchemaPolicy.ExactOrdered.type]]
+    """)
+
+    assert(errors.contains("@0(name)") || errors.contains("id expected"))
+
+  test("SchemaConforms accepts ExactOrderedCI when order matches and case differs"):
+    final case class Out(ID: Long, EMAIL: String, AMOUNT: BigDecimal)
+
+    val evidence =
+      SchemaConforms.conforms[Out, OrderContract, SchemaPolicy.ExactOrderedCI.type]
+    assert(evidence != null)
+
+  test("SchemaConforms accepts ExactByPosition when names differ but positions match"):
+    final case class Out(a: Long, b: String, c: BigDecimal)
+
+    val evidence =
+      SchemaConforms.conforms[Out, OrderContract, SchemaPolicy.ExactByPosition.type]
+    assert(evidence != null)
+
+  test("SchemaConforms accepts Full even when shapes drift"):
+    final case class Out(id: Long)
+    final case class Contract(id: String, email: String)
+
+    val evidence = SchemaConforms.conforms[Out, Contract, SchemaPolicy.Full.type]
+    assert(evidence != null)
+
   test("SchemaConforms rejects missing fields"):
     val errors = compileErrors("""
       import proofgate.proof.*

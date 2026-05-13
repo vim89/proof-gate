@@ -47,7 +47,7 @@ This repository currently targets the stable stack:
 ## Module layout
 
 - `modules/model`: core ADTs, typed errors, report model
-- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof (Exact, Backward, Forward)
+- `modules/proof`: proposal DSL, typestate builder, `SchemaConforms` proof policies
 - `modules/runtime-spark`: runtime shape derivation, sink-boundary pin checks, Spark schema adapter
 - `modules/cli`: CLI entry point
 - `modules/examples`: tiny usage examples
@@ -90,7 +90,11 @@ The expected-failure fixtures prove that these patterns are blocked:
 
 `SchemaConforms[Out, Contract, Policy]` is the compile-time evidence the proof layer requires.
 
-- `SchemaPolicy.Exact`: `Out` and `Contract` must have the same field names, types, and nesting.
+- `SchemaPolicy.Exact`: unordered by name, case-insensitive, same field set, types, and nesting.
+- `SchemaPolicy.ExactUnorderedCI`: explicit alias for unordered case-insensitive exact matching.
+- `SchemaPolicy.ExactOrdered`: ordered by field name, case-sensitive.
+- `SchemaPolicy.ExactOrderedCI`: ordered by field name, case-insensitive.
+- `SchemaPolicy.ExactByPosition`: ordered by position only; field names are ignored.
 - `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Required `Contract`
   fields must still exist in `Out` with the declared type. Missing optional `Contract`
   fields are accepted. Old consumers reading `Contract` keep working when the producer
@@ -98,6 +102,12 @@ The expected-failure fixtures prove that these patterns are blocked:
 - `SchemaPolicy.Forward`: `Out` may drop fields that `Contract` declares. Extra fields
   in `Out` and type drift still fail. Old producers stay compatible with new consumers
   that have widened the contract.
+- `SchemaPolicy.Full`: escape hatch for demo and migration paths; compile-time and runtime
+  structural checks accept the shape.
+
+These names intentionally mirror `compile-time-data-contracts`. ProofGate keeps the same policy
+vocabulary so the talk can show a clean migration from the earlier proof asset into the review
+conveyor.
 
 ## Spark bridge
 
@@ -130,5 +140,6 @@ See [docs/spark-bridge.md](docs/spark-bridge.md) for an end-to-end recipe, inclu
 
 This is an early POC scaffold.
 The current code proves the build, module wiring, typed-error model, typestate assembly,
-exact, backward, and forward structural contract proofs, an in-memory runtime shape pin,
-a Spark schema bridge, and a CI-friendly Markdown and JSON review report path.
+the full compile-time policy vocabulary from `compile-time-data-contracts`, an in-memory
+runtime shape pin with matching policy entry points, a Spark schema bridge, and a CI-friendly
+Markdown and JSON review report path.

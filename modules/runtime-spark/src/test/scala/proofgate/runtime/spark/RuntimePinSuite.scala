@@ -5,8 +5,18 @@ import proofgate.proof.SchemaPolicy
 
 final class RuntimePinSuite extends FunSuite:
   final case class Address(city: String, zip: Option[Int])
-  final case class OrderActual(id: Long, email: String, tags: List[Option[String]], address: Address)
-  final case class OrderExpected(id: Long, email: String, tags: List[Option[String]], address: Address)
+  final case class OrderActual(
+      id: Long,
+      email: String,
+      tags: List[Option[String]],
+      address: Address
+  )
+  final case class OrderExpected(
+      id: Long,
+      email: String,
+      tags: List[Option[String]],
+      address: Address
+  )
 
   test("runtime shape derivation produces exact shapes for matching contracts"):
     val actual = RuntimeShapeEncoder.shapeOf[OrderActual]

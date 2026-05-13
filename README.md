@@ -94,9 +94,9 @@ The expected-failure fixtures prove that these patterns are blocked:
 - `SchemaPolicy.Backward`: `Out` may add fields beyond `Contract`. Every `Contract` field
   must still exist in `Out` with the declared type. Old consumers reading `Contract`
   keep working when the producer adds fields.
-
-`SchemaPolicy.Forward` is reserved and not yet implemented; the macro reports a clear error
-if it is requested.
+- `SchemaPolicy.Forward`: `Out` may drop fields that `Contract` declares. Extra fields
+  in `Out` and type drift still fail. Old producers stay compatible with new consumers
+  that have widened the contract.
 
 ## Spark bridge
 
